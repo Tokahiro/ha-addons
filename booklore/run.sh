@@ -4,7 +4,7 @@ set -euo pipefail
 
 log(){ echo "[booklore-addon] $*"; }
 
-# Optional: Bashio helpers if available
+# Optional: Bashio for options & Services API helpers
 if [ -f /usr/lib/bashio/bashio ]; then
   # shellcheck disable=SC1091
   source /usr/lib/bashio/bashio
@@ -13,7 +13,7 @@ else
   HAS_BASHIO=0
 fi
 
-# --- Read options from the Add-on Configuration tab ---
+# ---- Read options from UI ----
 get_opt() {
   local key="$1" def="${2:-}"
   if [ "$HAS_BASHIO" -eq 1 ]; then
@@ -27,7 +27,7 @@ USE_SVC="$(get_opt 'use_mysql_service' 'true')"
 DB_NAME="$(get_opt 'db_name' 'booklore')"
 SWAGGER_ENABLED="$(get_opt 'swagger_enabled' 'false')"
 
-# --- Try MariaDB auto-discovery via Services API ---
+# ---- MariaDB auto-discovery or manual fallback ----
 if [ "$USE_SVC" = "true" ]; then
   if [ "$HAS_BASHIO" -eq 1 ] && bashio::services.available "mysql"; then
     DB_HOST="$(bashio::services 'mysql' 'host')"
@@ -45,7 +45,6 @@ if [ "$USE_SVC" = "true" ]; then
   fi
 fi
 
-# --- Fallback to manual options if discovery not available ---
 if [ -z "${DB_HOST:-}" ]; then
   DB_HOST="$(get_opt 'db_host' 'core-mariadb')"
   DB_PORT="$(get_opt 'db_port' '3306')"
@@ -54,23 +53,36 @@ if [ -z "${DB_HOST:-}" ]; then
   log "Using manual DB configuration at ${DB_HOST}:${DB_PORT}"
 fi
 
-# --- Export BookLore env (as expected by the upstream image) ---
+# ---- Export upstream env vars ----
 export DATABASE_URL="jdbc:mariadb://${DB_HOST}:${DB_PORT}/${DB_NAME}"
 export DATABASE_USERNAME="${DB_USER}"
 export DATABASE_PASSWORD="${DB_PASS}"
 export SWAGGER_ENABLED="${SWAGGER_ENABLED}"
 
-# Ensure the app binds to the Ingress port
-export SERVER_PORT="${SERVER_PORT:-6060}"
-
-log "DB URL: ${DATABASE_URL}"
-log "Starting BookLore from /app/app.jar on port ${SERVER_PORT}"
-
-# --- Start the upstream app JAR (known path) ---
+# ---- Start backend on 8080 (as upstream expects behind NGINX) ----
 if [ ! -f /app/app.jar ]; then
-  log "Error: /app/app.jar not found. Listing /app for debugging:"
+  log "Error: /app/app.jar not found. Listing /app:"
   ls -alh /app || true
   sleep infinity
 fi
 
-exec java -XX:+UseG1GC -jar /app/app.jar
+log "Starting backend on 8080: /app/app.jar"
+java -XX:+UseG1GC -Dserver.port=8080 -jar /app/app.jar >/proc/1/fd/1 2>/proc/1/fd/2 &
+
+# Optional: Wait briefly for backend health (best-effort)
+for i in $(seq 1 40); do
+  if curl -fsS http://127.0.0.1:8080/actuator/health >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.5
+done
+
+# ---- Start NGINX on 6060 (Ingress & direct access) ----
+if command -v nginx >/dev/null 2>&1; then
+  log "Starting NGINX on 6060 (foreground)"
+  exec nginx -g "daemon off;"
+else
+  log "NGINX not found in image. Falling back to backend only on 8080."
+  log "You can expose 8080 temporarily for debugging if needed."
+  sleep infinity
+fi
