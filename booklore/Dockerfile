@@ -1,7 +1,7 @@
 ARG BOOKLORE_TAG=latest
 FROM ghcr.io/adityachandelgit/booklore-app:${BOOKLORE_TAG}
 
-# Tools for the wrapper + nginx for the UI/proxy
+# Small tools + nginx (if not already present)
 RUN set -eux; \
     if command -v apk >/dev/null 2>&1; then \
       apk add --no-cache bash curl jq nginx; \
@@ -10,10 +10,13 @@ RUN set -eux; \
     elif command -v microdnf >/dev/null 2>&1; then \
       microdnf install -y bash curl jq nginx && microdnf clean all; \
     else \
-      echo "No known package manager found; assuming nginx present."; \
+      echo "Assuming nginx present."; \
     fi
 
-# Optional: Bashio helpers for Services API
+# Use our Nginx config for 6060 -> 8080 proxy with WS support
+COPY nginx/booklore.conf /etc/nginx/conf.d/default.conf
+
+# (Optional) Bashio for easier Services API usage
 ARG BASHIO_VERSION=0.16.2
 RUN curl -fsSL https://github.com/hassio-addons/bashio/archive/refs/tags/v${BASHIO_VERSION}.tar.gz \
   | tar xz -C /tmp && mv /tmp/bashio-${BASHIO_VERSION} /usr/lib/bashio || true
