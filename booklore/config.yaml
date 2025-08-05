@@ -1,40 +1,60 @@
 name: "BookLore"
 slug: "booklore"
-version: "latest"
-description: "Self-hosted book & comic library (PDF, EPUB, CBZ) with metadata, OPDS, multi-user, built-in reader."
+version: "0.4.0"                 # add-on version (not the BookLore image tag)
+description: "Self-hosted book & comic library with metadata, OPDS, multi-user and built-in reader."
 url: "https://github.com/Tokahiro/ha-addons/tree/main/booklore"
-arch: [aarch64, armv7, amd64]
+arch:
+  - aarch64
+  - armv7
+  - amd64
 startup: application
 
+# Ingress: visible in the HA sidebar, no extra host port needed
 ingress: true
 ingress_port: 6060
 ingress_entry: "/"
 panel_icon: "mdi:book-open-variant"
 panel_title: "BookLore"
 
+# Optional: expose host port in addition to Ingress (keep null to disable)
 ports:
   "6060/tcp": null
 ports_description:
   "6060/tcp": "Web UI (optional external access)"
 
-# Map HA folders for your library & uploads
+# Map HA folders for libraries/uploads
 map:
   - type: media
     read_only: false
   - type: share
     read_only: false
 
+# Use the Services API for MariaDB auto-discovery
+services:
+  - "mysql:need"
+
+# Security posture
 apparmor: true
 host_network: false
 privileged: []
 
+# Minimum HA version
 homeassistant: "2023.12.0"
 
-# Reuse upstream BookLore image (multi-arch manifest)
-image: "ghcr.io/adityachandelgit/booklore-app"
-
-# Database env (manual, since we're reusing the upstream container)
-environment:
-  DATABASE_URL: "jdbc:mariadb://core-mariadb:3306/booklore"
-  DATABASE_USERNAME: "booklore"
-  DATABASE_PASSWORD: "CHANGE_ME"
+# --- Configuration tab (shown in Supervisor UI) ---
+options:
+  use_mysql_service: true
+  db_host: "core-mariadb"     # Fallback host if not using discovery
+  db_port: 3306
+  db_name: "booklore"
+  db_user: "booklore"
+  db_password: "CHANGE_ME"
+  swagger_enabled: false
+schema:
+  use_mysql_service: bool
+  db_host: str
+  db_port: int
+  db_name: str
+  db_user: str
+  db_password: str
+  swagger_enabled: bool
