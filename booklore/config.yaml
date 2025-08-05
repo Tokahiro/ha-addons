@@ -18,7 +18,7 @@ panel_title: "BookLore"
 
 # Optional: expose host port in addition to Ingress (keep null to disable)
 ports:
-  "6060/tcp": null
+  "6060/tcp": 6060
 ports_description:
   "6060/tcp": "Web UI (optional external access)"
 
