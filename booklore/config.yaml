@@ -1,0 +1,51 @@
+name: "BookLore"
+slug: "booklore"
+version: "0.3.0"
+description: "Self-hosted book & comic library (PDF, EPUB, CBZ) with metadata, OPDS, multi-user, built-in reader."
+url: "https://github.com/Tokahiro/ha-addons/tree/main/booklore"
+arch:
+  - aarch64
+  - armv7
+  - amd64
+startup: "application"
+
+# Ingress: show BookLore in the HA sidebar without exposing a port
+ingress: true
+ingress_port: 6060
+ingress_entry: "/"
+panel_icon: "mdi:book-open-variant"
+panel_title: "BookLore"
+
+# Optional host port (keep null to rely on Ingress only)
+ports:
+  "6060/tcp": null
+ports_description:
+  "6060/tcp": "Web UI (optional external access)"
+
+# Map HA media/share into the container
+map:
+  - type: media
+    read_only: false
+  - type: share
+    read_only: false
+
+# Security posture
+apparmor: true
+host_network: false
+privileged: []
+
+# Minimum HA version (good practice)
+homeassistant: "2023.12.0"
+
+# Reuse upstream BookLore image (multi-arch)
+image: "ghcr.io/adityachandelgit/booklore-app:latest"
+
+# Static environment for DB connection (edit for your setup)
+# If using the official MariaDB add-on on the same host,
+# 'core-mariadb' is the typical hostname on the add-on network.
+environment:
+  DATABASE_URL: "jdbc:mariadb://core-mariadb:3306/booklore"
+  DATABASE_USERNAME: "booklore"
+  DATABASE_PASSWORD: "CHANGE_ME"
+  # Optional:
+  # SWAGGER_ENABLED: "false"
