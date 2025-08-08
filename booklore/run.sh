@@ -106,7 +106,17 @@ mount_external_disks() {
         mount_point="${base_mount}/${mount_name}"
         mkdir -p "$mount_point"
 
-        # Unmount if already mounted, to be safe
+        # Check if device is already mounted somewhere else
+        existing_mount=$(mount | grep "^$device " | awk '{print $3}' | head -n1)
+        if [ -n "$existing_mount" ]; then
+            log "WARNING: Device '$device' is already mounted at '$existing_mount'. Unmounting first."
+            umount "$device" || {
+                log "ERROR: Could not unmount '$device' from '$existing_mount'. Skipping."
+                continue
+            }
+        fi
+
+        # Unmount if mount point is already in use
         if mountpoint -q "$mount_point"; then
             log "WARNING: Mount point '$mount_point' is already in use. Unmounting first."
             umount "$mount_point" || log "WARNING: Could not unmount '$mount_point'."
