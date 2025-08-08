@@ -1,4 +1,4 @@
-#!/usr/bin/env bashio
+#!/usr/bin/env bash
 # shellcheck shell=bash
 set -euo pipefail
 
