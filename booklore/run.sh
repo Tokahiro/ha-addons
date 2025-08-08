@@ -6,6 +6,9 @@ log(){ echo "[booklore-addon] $*"; }
 
 # Optional: Bashio for options & Services API helpers
 HAS_BASHIO=0
+echo $(ls -l /usr/lib/bashio)
+echo $(ls -l /usr/lib/bashio/lib/)
+exit 0;
 if [ -f /usr/lib/bashio/lib/bashio ]; then
   # shellcheck disable=SC1091
   source /usr/lib/bashio/lib/bashio
