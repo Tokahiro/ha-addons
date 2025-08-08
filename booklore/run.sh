@@ -71,6 +71,14 @@ mount_external_disks() {
     fi
 
     log "Processing external mounts..."
+    
+    # Show available devices for debugging
+    log "Available block devices:"
+    lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT 2>/dev/null || log "lsblk command failed"
+    
+    # Show supported filesystems
+    fstypessupport=$(grep -v nodev < /proc/filesystems | awk '{$1=" "$1}1' | tr -d '\n\t')
+    log "Supported filesystems: $fstypessupport"
 
     # Create base directory if it doesn't exist
     mkdir -p "$base_mount"
@@ -122,13 +130,62 @@ mount_external_disks() {
             umount "$mount_point" || log "WARNING: Could not unmount '$mount_point'."
         fi
 
-        # Attempt to mount the device
-        log "Mounting '$device' to '$mount_point'..."
-        if mount -o "$mount_opts" "$device" "$mount_point"; then
+        # Detect filesystem type and set appropriate mount options
+        log "Detecting filesystem type for '$device'..."
+        fstype=$(lsblk "$device" -no fstype 2>/dev/null || echo "unknown")
+        log "Detected filesystem type: $fstype"
+        
+        # Get supported filesystems
+        fstypessupport=$(grep -v nodev < /proc/filesystems | awk '{$1=" "$1}1' | tr -d '\n\t')
+        
+        # Set filesystem-specific options
+        mount_options="nosuid,relatime,noexec"
+        mount_type="auto"
+        
+        case "$fstype" in
+            exfat | vfat | msdos)
+                log "WARNING: $fstype permissions and ACL don't work - using experimental support"
+                mount_options="${mount_options},umask=000"
+                ;;
+            ntfs)
+                log "WARNING: $fstype is experimental support"
+                mount_options="${mount_options},umask=000"
+                mount_type="ntfs"
+                ;;
+            squashfs)
+                log "WARNING: $fstype is experimental support"
+                mount_options="loop"
+                mount_type="squashfs"
+                ;;
+            ext2 | ext3 | ext4 | xfs | btrfs)
+                # Standard Linux filesystems - use default options with rw
+                mount_options="rw,noatime"
+                ;;
+            *)
+                if [[ "${fstypessupport}" != *"${fstype}"* ]] && [ "$fstype" != "unknown" ]; then
+                    log "ERROR: Filesystem type '$fstype' for device '$device' is not supported by this system."
+                    log "Supported filesystems: $fstypessupport"
+                    rmdir "$mount_point" 2>/dev/null || true
+                    continue
+                fi
+                # Use default options for unknown or other supported filesystems
+                mount_options="rw,noatime"
+                ;;
+        esac
+        
+        # Attempt to mount the device with timeout
+        log "Mounting '$device' to '$mount_point' with type '$mount_type' and options '$mount_options'..."
+        if timeout 30 mount -t "$mount_type" -o "$mount_options" "$device" "$mount_point"; then
             log "Successfully mounted '$device' to '$mount_point'."
             MOUNTED_PATHS+=("$mount_point")
         else
-            log "ERROR: Failed to mount '$device' to '$mount_point'. Skipping."
+            mount_exit_code=$?
+            log "ERROR: Failed to mount '$device' to '$mount_point' (exit code: $mount_exit_code)."
+            if [ $mount_exit_code -eq 124 ]; then
+                log "ERROR: Mount operation timed out after 30 seconds."
+            fi
+            log "Filesystem type was: $fstype"
+            log "Mount options used: $mount_options"
             # Clean up the created directory if mount fails
             rmdir "$mount_point" 2>/dev/null || true
         fi
