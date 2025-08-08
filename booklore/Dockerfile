@@ -1,5 +1,4 @@
-ARG BOOKLORE_TAG=latest
-FROM ghcr.io/adityachandelgit/booklore-app:${BOOKLORE_TAG}
+FROM ghcr.io/adityachandelgit/booklore-app:latest
 
 # Small tools + nginx + mount utilities
 RUN set -eux; \
