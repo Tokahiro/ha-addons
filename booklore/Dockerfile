@@ -25,7 +25,13 @@ COPY nginx/booklore.conf /etc/nginx/conf.d/default.conf
 # (Optional) Bashio for easier Services API usage
 ARG BASHIO_VERSION=0.16.2
 RUN curl -fsSL https://github.com/hassio-addons/bashio/archive/refs/tags/v${BASHIO_VERSION}.tar.gz \
-  | tar xz -C /tmp && mv /tmp/bashio-${BASHIO_VERSION} /usr/lib/bashio || true
+  | tar xz -C /tmp && \
+  if [ -d "/tmp/bashio-${BASHIO_VERSION}" ]; then \
+    mv /tmp/bashio-${BASHIO_VERSION} /usr/lib/bashio && \
+    echo "Bashio installed successfully"; \
+  else \
+    echo "Warning: Bashio installation failed, fallback mode will be used"; \
+  fi
 
 COPY run.sh /run.sh
 RUN chmod +x /run.sh

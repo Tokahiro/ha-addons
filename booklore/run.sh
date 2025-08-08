@@ -35,25 +35,42 @@ mount_external_disks() {
     local mount_opts="rw,noatime"
 
     # Check for legacy single mount option for backward compatibility
-    if ! bashio::config.has_value 'mounts'; then
-        legacy_mount=$(bashio::config 'mount' '')
-        if [ -n "$legacy_mount" ]; then
-            bashio::log.warning "Using legacy 'mount' option. Please migrate to the 'mounts' list."
-            mounts_json="[\"$legacy_mount\"]"
+    if [ "$HAS_BASHIO" -eq 1 ]; then
+        if ! bashio::config.has_value 'mounts'; then
+            legacy_mount=$(bashio::config 'mount' '')
+            if [ -n "$legacy_mount" ]; then
+                bashio::log.warning "Using legacy 'mount' option. Please migrate to the 'mounts' list."
+                mounts_json="[\"$legacy_mount\"]"
+            else
+                mounts_json="[]"
+            fi
+        else
+            mounts_json=$(bashio::config 'mounts')
+        fi
+    else
+        # Fallback to jq when bashio is not available
+        if jq -e '.mounts' /data/options.json >/dev/null 2>&1; then
+            mounts_json=$(jq -r '.mounts' /data/options.json)
+        elif jq -e '.mount' /data/options.json >/dev/null 2>&1; then
+            legacy_mount=$(jq -r '.mount // ""' /data/options.json)
+            if [ -n "$legacy_mount" ]; then
+                log "Using legacy 'mount' option. Please migrate to the 'mounts' list."
+                mounts_json="[\"$legacy_mount\"]"
+            else
+                mounts_json="[]"
+            fi
         else
             mounts_json="[]"
         fi
-    else
-        mounts_json=$(bashio::config 'mounts')
     fi
 
     # If mounts list is empty, do nothing.
     if [ -z "$mounts_json" ] || [ "$mounts_json" = "[]" ]; then
-        bashio::log.info "No external mounts specified. Using default storage."
+        log "No external mounts specified. Using default storage."
         return 0
     fi
 
-    bashio::log.info "Processing external mounts..."
+    log "Processing external mounts..."
 
     # Create base directory if it doesn't exist
     mkdir -p "$base_mount"
@@ -63,7 +80,7 @@ mount_external_disks() {
         # Skip empty values that might result from jq parsing
         [ -z "$mount_value" ] && continue
 
-        bashio::log.info "--- Processing mount: $mount_value ---"
+        log "--- Processing mount: $mount_value ---"
 
         # Intelligent detection: Is it a device path or a label?
         if [[ "$mount_value" == /dev/* ]]; then
@@ -72,16 +89,16 @@ mount_external_disks() {
         else
             device=$(blkid -L "$mount_value" 2>/dev/null)
             if [ -z "$device" ]; then
-                bashio::log.error "A device with the label '$mount_value' could not be found. Skipping."
+                log "ERROR: A device with the label '$mount_value' could not be found. Skipping."
                 continue
             fi
-            bashio::log.info "Found device '$device' for label '$mount_value'."
+            log "Found device '$device' for label '$mount_value'."
             mount_name=$(echo "$mount_value" | sed 's/[^a-zA-Z0-9_-]/_/g')
         fi
 
         # Check if device exists
         if [ ! -b "$device" ]; then
-            bashio::log.error "The specified device '$device' does not exist or is not a block device. Skipping."
+            log "ERROR: The specified device '$device' does not exist or is not a block device. Skipping."
             continue
         fi
         
@@ -91,17 +108,17 @@ mount_external_disks() {
 
         # Unmount if already mounted, to be safe
         if mountpoint -q "$mount_point"; then
-            bashio::log.warning "Mount point '$mount_point' is already in use. Unmounting first."
-            umount "$mount_point" || bashio::log.warning "Could not unmount '$mount_point'."
+            log "WARNING: Mount point '$mount_point' is already in use. Unmounting first."
+            umount "$mount_point" || log "WARNING: Could not unmount '$mount_point'."
         fi
 
         # Attempt to mount the device
-        bashio::log.info "Mounting '$device' to '$mount_point'..."
+        log "Mounting '$device' to '$mount_point'..."
         if mount -o "$mount_opts" "$device" "$mount_point"; then
-            bashio::log.notice "Successfully mounted '$device' to '$mount_point'."
+            log "Successfully mounted '$device' to '$mount_point'."
             MOUNTED_PATHS+=("$mount_point")
         else
-            bashio::log.error "Failed to mount '$device' to '$mount_point'. Skipping."
+            log "ERROR: Failed to mount '$device' to '$mount_point'. Skipping."
             # Clean up the created directory if mount fails
             rmdir "$mount_point" 2>/dev/null || true
         fi
@@ -109,10 +126,10 @@ mount_external_disks() {
 
     # Report summary
     if [ ${#MOUNTED_PATHS[@]} -gt 0 ]; then
-        bashio::log.info "Mounting summary: Successfully mounted ${#MOUNTED_PATHS[@]} device(s)."
+        log "Mounting summary: Successfully mounted ${#MOUNTED_PATHS[@]} device(s)."
         export BOOKLORE_LIBRARY_PATHS="${MOUNTED_PATHS[*]}"
     else
-        bashio::log.warning "No external devices were successfully mounted."
+        log "WARNING: No external devices were successfully mounted."
     fi
 }
 
@@ -122,14 +139,14 @@ cleanup_mounts() {
         return
     fi
 
-    bashio::log.info "Unmounting ${#MOUNTED_PATHS[@]} device(s)..."
+    log "Unmounting ${#MOUNTED_PATHS[@]} device(s)..."
     for mount_point in "${MOUNTED_PATHS[@]}"; do
         if mountpoint -q "$mount_point"; then
-            bashio::log.info "Unmounting '$mount_point'..."
+            log "Unmounting '$mount_point'..."
             if umount "$mount_point"; then
                 rmdir "$mount_point" 2>/dev/null || true
             else
-                bashio::log.warning "Failed to unmount '$mount_point' on shutdown."
+                log "WARNING: Failed to unmount '$mount_point' on shutdown."
             fi
         fi
     done
