@@ -1,6 +1,6 @@
 name: "BookLore"
 slug: "booklore"
-version: "0.20.7"                 # add-on version (not the BookLore image tag)
+version: "0.20.9"                 # add-on version (not the BookLore image tag)
 description: "Self-hosted book & comic library with metadata, OPDS, multi-user and built-in reader."
 url: "https://github.com/Tokahiro/ha-addons/tree/main/booklore"
 arch:
@@ -73,14 +73,7 @@ options:
   db_user: "booklore"
   db_password: "CHANGE_ME"
   swagger_enabled: false
-  # NEW: External disk mounting options
-  external_disk:
-    enabled: false
-    label: "" # e.g., "BOOKLORE_DATA"
-    device: ""  # e.g., "/dev/sda1" or "/dev/nvme0n1p1"
-    mount_point: "/mnt/external_library"
-    filesystem: "auto"  # auto-detect or specify: ext4, ntfs, exfat
-    mount_options: "rw,noatime"
+  mounts: []  # List of device paths or labels
 schema:
   use_mysql_service: bool
   db_host: str
@@ -89,11 +82,5 @@ schema:
   db_user: str
   db_password: password
   swagger_enabled: bool
-  # NEW: Schema for external disk options
-  external_disk:
-    enabled: bool
-    label: "match(^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$)?"
-    device: "match(^(/dev/sd[a-g][0-9]?|/dev/nvme[0-9]n[0-9](p[0-9])?|)$)?"
-    mount_point: str?
-    filesystem: "list(auto|ext4|ext3|ext2|ntfs|exfat|vfat|xfs|btrfs)?"
-    mount_options: str?
+  mounts:
+    - "str?"

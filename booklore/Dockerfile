@@ -28,5 +28,5 @@ RUN curl -fsSL https://github.com/hassio-addons/bashio/archive/refs/tags/v${BASH
   | tar xz -C /tmp && mv /tmp/bashio-${BASHIO_VERSION} /usr/lib/bashio || true
 
 COPY run.sh /run.sh
-RUN chmod +x /run.sh
-ENTRYPOINT ["/run.sh"]
+RUN chmod a+x /run.sh
+CMD [ "/run.sh" ]
