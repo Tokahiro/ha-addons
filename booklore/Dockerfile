@@ -1,16 +1,22 @@
 ARG BOOKLORE_TAG=latest
 FROM ghcr.io/adityachandelgit/booklore-app:${BOOKLORE_TAG}
 
-# Small tools + nginx (if not already present)
+# Small tools + nginx + mount utilities
 RUN set -eux; \
     if command -v apk >/dev/null 2>&1; then \
-      apk add --no-cache bash curl jq nginx; \
+      apk add --no-cache bash curl jq nginx \
+        util-linux e2fsprogs ntfs-3g exfat-utils; \
     elif command -v apt-get >/dev/null 2>&1; then \
-      apt-get update && apt-get install -y --no-install-recommends bash curl jq nginx && rm -rf /var/lib/apt/lists/*; \
+      apt-get update && apt-get install -y --no-install-recommends \
+        bash curl jq nginx mount util-linux e2fsprogs \
+        ntfs-3g exfat-utils exfat-fuse && \
+        rm -rf /var/lib/apt/lists/*; \
     elif command -v microdnf >/dev/null 2>&1; then \
-      microdnf install -y bash curl jq nginx && microdnf clean all; \
+      microdnf install -y bash curl jq nginx \
+        util-linux e2fsprogs ntfs-3g exfat-utils && \
+        microdnf clean all; \
     else \
-      echo "Assuming nginx present."; \
+      echo "Assuming mount utilities present."; \
     fi
 
 # Use our Nginx config for 6060 -> 8080 proxy with WS support
