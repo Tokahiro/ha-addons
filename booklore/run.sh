@@ -5,11 +5,10 @@ set -euo pipefail
 log(){ echo "[booklore-addon] $*"; }
 
 # Optional: Bashio for options & Services API helpers
-echo $(ls -al /usr/lib/bashio/)
-echo $(ls -al /usr/lib/bashio/bashio)
-if [ -f /usr/lib/bashio/bashio ]; then
+HAS_BASHIO=0
+if [ -f /usr/lib/bashio/lib/bashio ]; then
   # shellcheck disable=SC1091
-  source /usr/lib/bashio/bashio
+  source /usr/lib/bashio/lib/bashio
   HAS_BASHIO=1
 else
   HAS_BASHIO=0
