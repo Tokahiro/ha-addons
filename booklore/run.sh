@@ -11,9 +11,9 @@ HAS_BASHIO=0
 # echo ls -l /usr/lib/bashio/lib:
 # echo $(ls -l /usr/lib/bashio/lib/)
 # exit 0;
-if [ -f /usr/lib/bashio/lib/bashio.sh ]; then
+if [ -f /usr/lib/bashio/bashio ]; then
   # shellcheck disable=SC1091
-  source /usr/lib/bashio/lib/bashio.sh
+  /usr/lib/bashio/lib/bashio.sh
   HAS_BASHIO=1
 else
   HAS_BASHIO=0
