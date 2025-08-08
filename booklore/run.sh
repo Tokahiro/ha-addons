@@ -1,10 +1,12 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bashio
 # shellcheck shell=bash
 set -euo pipefail
 
 log(){ echo "[booklore-addon] $*"; }
 
 # Optional: Bashio for options & Services API helpers
+echo ls -al /usr/lib/bashio/
+echo ls -al /usr/lib/bashio/bashio
 if [ -f /usr/lib/bashio/bashio ]; then
   # shellcheck disable=SC1091
   source /usr/lib/bashio/bashio
@@ -12,6 +14,7 @@ if [ -f /usr/lib/bashio/bashio ]; then
 else
   HAS_BASHIO=0
 fi
+
 
 # ---- Read options from UI ----
 get_opt() {
