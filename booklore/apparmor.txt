@@ -1,0 +1,134 @@
+#include <tunables/global>
+
+profile booklore_addon flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  # Core capabilities needed for mounting
+  capability,
+  file,
+  signal,
+  mount,
+  umount,
+  remount,
+  network udp,
+  network tcp,
+  network dgram,
+  network stream,
+  network inet,
+  network inet6,
+  network netlink raw,
+  network unix dgram,
+
+  # Required capabilities for mount operations
+  capability setgid,
+  capability setuid,
+  capability sys_admin,
+  capability dac_read_search,
+  capability dac_override,
+  capability sys_rawio,
+
+  # S6-Overlay
+  /init ix,
+  /run/{s6,s6-rc*,service}/** ix,
+  /package/** ix,
+  /command/** ix,
+  /run/{,**} rwk,
+  /dev/tty rw,
+  /bin/** ix,
+  /usr/bin/** ix,
+  /usr/lib/bashio/** ix,
+  /etc/s6/** rix,
+  /run/s6/** rix,
+  /etc/services.d/** rwix,
+  /etc/cont-init.d/** rwix,
+  /etc/cont-finish.d/** rwix,
+  /init rix,
+  /var/run/** mrwkl,
+  /var/run/ mrwkl,
+  
+  # Device access for mounting
+  /dev/fuse mrwkl,
+  /dev/sda mrwkl,
+  /dev/sda[0-9] mrwkl,
+  /dev/sdb mrwkl,
+  /dev/sdb[0-9] mrwkl,
+  /dev/sdc mrwkl,
+  /dev/sdc[0-9] mrwkl,
+  /dev/sdd mrwkl,
+  /dev/sdd[0-9] mrwkl,
+  /dev/sde mrwkl,
+  /dev/sde[0-9] mrwkl,
+  /dev/nvme[0-9]n[0-9] mrwkl,
+  /dev/nvme[0-9]n[0-9]p[0-9] mrwkl,
+  /dev/mmcblk[0-9] mrwkl,
+  /dev/mmcblk[0-9]p[0-9] mrwkl,
+  /dev/* mrwkl,
+  /dev/disk/** mrwkl,
+  /sys/devices/** r,
+  /sys/block/** r,
+  
+  # Mount points
+  /mnt/ rw,
+  /mnt/** rw,
+  /share/ rw,
+  /share/** rw,
+  /media/ rw,
+  /media/** rw,
+  /tmp/** mrkwl,
+  
+  # Required for mount operations
+  /proc/filesystems r,
+  /proc/mounts r,
+  /proc/self/mountinfo r,
+  /etc/fstab r,
+  
+  # Data access
+  /data/** rw,
+  
+  # App specific paths
+  /app/** ix,
+  /app/app.jar r,
+  
+  # Java execution
+  /usr/bin/java ix,
+  /usr/lib/jvm/** r,
+  /proc/*/maps r,
+  /proc/*/fd/** r,
+  
+  # Nginx
+  /usr/sbin/nginx ix,
+  /etc/nginx/** r,
+  /var/log/nginx/** rw,
+  /var/lib/nginx/** rw,
+  /run/nginx/** rw,
+  
+  # Shell and utilities
+  /bin/bash ix,
+  /bin/sh ix,
+  /usr/bin/curl ix,
+  /usr/bin/jq ix,
+  /usr/bin/lsblk ix,
+  /usr/bin/blkid ix,
+  /usr/bin/mount ix,
+  /usr/bin/umount ix,
+  /usr/bin/findmnt ix,
+  /usr/bin/mountpoint ix,
+  /usr/bin/grep ix,
+  /usr/bin/awk ix,
+  /usr/bin/sed ix,
+  /usr/bin/tr ix,
+  /usr/bin/cat ix,
+  /usr/bin/echo ix,
+  /usr/bin/mkdir ix,
+  /usr/bin/rmdir ix,
+  /usr/bin/rm ix,
+  /usr/bin/ln ix,
+  /usr/bin/sleep ix,
+  /usr/bin/timeout ix,
+  
+  # suppress ptrace denials when using 'docker ps' or using 'ps' inside a container
+  ptrace (trace,read) peer=docker-default,
+  
+  # docker daemon confinement requires explicit allow rule for signal
+  signal (receive) set=(kill,term) peer=/usr/bin/docker,
+}

@@ -1,6 +1,6 @@
 name: "BookLore"
 slug: "booklore"
-version: "0.20.34"                 # add-on version (not the BookLore image tag)
+version: "0.20.35"                 # add-on version (not the BookLore image tag)
 description: "Self-hosted book & comic library with metadata, OPDS, multi-user and built-in reader."
 url: "https://github.com/Tokahiro/ha-addons/tree/main/booklore"
 arch:
@@ -38,7 +38,9 @@ apparmor: true
 host_network: false
 privileged:
   - SYS_ADMIN  # Required for mount operations
+  - DAC_READ_SEARCH  # Required for accessing device files
 devices:
+  # SATA/USB drives - main devices
   - /dev/sda
   - /dev/sdb
   - /dev/sdc
@@ -46,20 +48,62 @@ devices:
   - /dev/sde
   - /dev/sdf
   - /dev/sdg
+  - /dev/sdh
+  # SATA/USB drives - all possible partitions (up to 9)
   - /dev/sda1
+  - /dev/sda2
+  - /dev/sda3
   - /dev/sdb1
+  - /dev/sdb2
+  - /dev/sdb3
   - /dev/sdc1
+  - /dev/sdc2
+  - /dev/sdc3
   - /dev/sdd1
+  - /dev/sdd2
+  - /dev/sdd3
   - /dev/sde1
+  - /dev/sde2
+  - /dev/sde3
   - /dev/sdf1
+  - /dev/sdf2
+  - /dev/sdf3
   - /dev/sdg1
+  - /dev/sdg2
+  - /dev/sdg3
+  - /dev/sdh1
+  - /dev/sdh2
+  - /dev/sdh3
+  # NVMe drives
   - /dev/nvme0n1
   - /dev/nvme0n1p1
+  - /dev/nvme0n1p2
   - /dev/nvme1n1
   - /dev/nvme1n1p1
+  - /dev/nvme1n1p2
   - /dev/nvme2n1
   - /dev/nvme2n1p1
-  # Note: Additional partitions can be added as needed
+  - /dev/nvme2n1p2
+  # MMC/SD cards (common on RPi)
+  - /dev/mmcblk0
+  - /dev/mmcblk0p1
+  - /dev/mmcblk0p2
+  - /dev/mmcblk1
+  - /dev/mmcblk1p1
+  - /dev/mmcblk1p2
+  # Device mapper devices (for RAID/LVM)
+  - /dev/dm-0
+  - /dev/dm-1
+  - /dev/dm-2
+  # Loop devices (for image mounts)
+  - /dev/loop0
+  - /dev/loop1
+  - /dev/loop2
+  # Generic block devices
+  - /dev/vda
+  - /dev/vda1
+  - /dev/vdb
+  - /dev/vdb1
 
 # Minimum HA version
 homeassistant: "2023.12.0"

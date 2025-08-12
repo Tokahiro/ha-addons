@@ -221,13 +221,19 @@ mount_external_disks() {
         # They use: mount -t $type "$device" "$mount_point" -o $options
         log "DEBUG: Attempting mount with: mount -t $mount_type '$device' '$mount_point' -o $mount_options"
         
-        if mount -t "$mount_type" "$device" "$mount_point" -o "$mount_options"; then
+        # Try mount with exact syntax from alexbelgium
+        if mount -t "$mount_type" "$device" "$mount_point" -o "$mount_options" 2>&1; then
             mount_success=true
             log "SUCCESS: Device '$device' mounted to '$mount_point'."
         else
-            log "WARNING: Mount failed. Error may be shown above."
-            # alexbelgium addons stop the addon if mount fails, but we'll continue
-            log "WARNING: Continuing without this mount."
+            # If first attempt fails, try without type specification (auto-detect)
+            log "DEBUG: First mount failed, trying auto-detect..."
+            if mount "$device" "$mount_point" -o "$mount_options" 2>&1; then
+                mount_success=true
+                log "SUCCESS: Device '$device' mounted to '$mount_point' (auto-detected type)."
+            else
+                log "WARNING: Mount failed. Continuing without this mount."
+            fi
         fi
         
         
