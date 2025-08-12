@@ -105,17 +105,23 @@ mount_external_disks() {
         fi
 
         # Check if device exists
+        log "DEBUG: Checking if device '$device' exists as block device..."
         if [ ! -b "$device" ]; then
             log "ERROR: The specified device '$device' does not exist or is not a block device. Skipping."
             continue
         fi
+        log "DEBUG: Device '$device' exists and is a valid block device."
         
         # Create unique mount point
         mount_point="${base_mount}/${mount_name}"
+        log "DEBUG: Creating mount point '$mount_point'..."
         mkdir -p "$mount_point"
+        log "DEBUG: Mount point '$mount_point' created successfully."
 
         # Check if device is already mounted somewhere else
-        existing_mount=$(mount | grep "^$device " | awk '{print $3}' | head -n1)
+        log "DEBUG: Checking if device '$device' is already mounted..."
+        existing_mount=$(timeout 10 sh -c "mount | grep '^$device ' | awk '{print \$3}' | head -n1" 2>/dev/null || echo "")
+        log "DEBUG: Existing mount check completed. Result: '${existing_mount:-none}'"
         if [ -n "$existing_mount" ]; then
             log "WARNING: Device '$device' is already mounted at '$existing_mount'. Unmounting first."
             umount "$device" || {
@@ -125,20 +131,27 @@ mount_external_disks() {
         fi
 
         # Unmount if mount point is already in use
-        if mountpoint -q "$mount_point"; then
+        log "DEBUG: Checking if mount point '$mount_point' is already in use..."
+        if timeout 5 mountpoint -q "$mount_point" 2>/dev/null; then
             log "WARNING: Mount point '$mount_point' is already in use. Unmounting first."
-            umount "$mount_point" || log "WARNING: Could not unmount '$mount_point'."
+            timeout 10 umount "$mount_point" || log "WARNING: Could not unmount '$mount_point'."
         fi
+        log "DEBUG: Mount point check completed."
 
         # Detect filesystem type and set appropriate mount options
+        log "DEBUG: Starting filesystem type detection for '$device'..."
         log "Detecting filesystem type for '$device'..."
-        fstype=$(lsblk "$device" -no fstype 2>/dev/null || echo "unknown")
+        fstype=$(timeout 10 lsblk "$device" -no fstype 2>/dev/null || echo "unknown")
+        log "DEBUG: lsblk command completed."
         log "Detected filesystem type: $fstype"
         
         # Get supported filesystems
-        fstypessupport=$(grep -v nodev < /proc/filesystems | awk '{$1=" "$1}1' | tr -d '\n\t')
+        log "DEBUG: Getting supported filesystems..."
+        fstypessupport=$(timeout 5 sh -c "grep -v nodev < /proc/filesystems | awk '{$1=\" \"\$1}1' | tr -d '\n\t'" 2>/dev/null || echo "ext2 ext3 ext4 vfat ntfs")
+        log "DEBUG: Supported filesystems retrieved."
         
         # Set filesystem-specific options
+        log "DEBUG: Setting filesystem-specific mount options for '$fstype'..."
         mount_options="nosuid,relatime,noexec"
         mount_type="auto"
         
@@ -174,16 +187,46 @@ mount_external_disks() {
         esac
         
         # Attempt to mount the device with timeout
+        log "DEBUG: About to attempt mount operation..."
+        log "DEBUG: Mount command will be: timeout 30 mount -t '$mount_type' -o '$mount_options' '$device' '$mount_point'"
         log "Mounting '$device' to '$mount_point' with type '$mount_type' and options '$mount_options'..."
-        if timeout 30 mount -t "$mount_type" -o "$mount_options" "$device" "$mount_point"; then
+        
+        # Add a pre-mount check to see if the device is accessible
+        log "DEBUG: Testing device accessibility with 'blkid $device'..."
+        if timeout 10 blkid "$device" >/dev/null 2>&1; then
+            log "DEBUG: Device '$device' is accessible via blkid."
+        else
+            log "WARNING: Device '$device' may not be accessible via blkid (or timed out)."
+        fi
+        
+        log "DEBUG: Starting mount operation with 30-second timeout..."
+        
+        # Try the mount operation with explicit error handling
+        mount_success=false
+        if timeout 30 mount -t "$mount_type" -o "$mount_options" "$device" "$mount_point" 2>&1; then
+            mount_success=true
+        else
+            mount_exit_code=$?
+            log "DEBUG: Mount operation failed with exit code: $mount_exit_code"
+            
+            # If the first mount attempt failed, try with different options
+            if [ "$mount_exit_code" -eq 124 ]; then
+                log "ERROR: Mount operation timed out after 30 seconds."
+            elif [ "$fstype" = "ext4" ] && [ "$mount_exit_code" -ne 0 ]; then
+                log "DEBUG: Retrying mount with simpler options for ext4..."
+                if timeout 15 mount -t ext4 -o rw,noatime "$device" "$mount_point" 2>&1; then
+                    mount_success=true
+                    log "DEBUG: Retry mount succeeded with simpler options."
+                fi
+            fi
+        fi
+        
+        if [ "$mount_success" = true ]; then
+            log "DEBUG: Mount operation completed successfully."
             log "Successfully mounted '$device' to '$mount_point'."
             MOUNTED_PATHS+=("$mount_point")
         else
-            mount_exit_code=$?
-            log "ERROR: Failed to mount '$device' to '$mount_point' (exit code: $mount_exit_code)."
-            if [ $mount_exit_code -eq 124 ]; then
-                log "ERROR: Mount operation timed out after 30 seconds."
-            fi
+            log "ERROR: Failed to mount '$device' to '$mount_point' after all attempts."
             log "Filesystem type was: $fstype"
             log "Mount options used: $mount_options"
             # Clean up the created directory if mount fails
