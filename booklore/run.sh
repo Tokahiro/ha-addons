@@ -116,12 +116,10 @@ mount_external_disks() {
         fi
 
         # Check if device exists
-        log "DEBUG: Checking if device '$device' exists as block device..."
         if [ ! -b "$device" ]; then
             log "ERROR: The specified device '$device' does not exist or is not a block device. Skipping."
             continue
         fi
-        log "DEBUG: Device '$device' exists and is a valid block device."
         
         # Create unique mount point
         mount_point="${base_mount}/${mount_name}"
@@ -144,23 +142,17 @@ mount_external_disks() {
         fi
         
         # Create mount point if it doesn't exist
-        log "DEBUG: Creating mount point '$mount_point'..."
         mkdir -p "$mount_point"
 
         # Detect filesystem type and set appropriate mount options
-        log "DEBUG: Starting filesystem type detection for '$device'..."
         log "Detecting filesystem type for '$device'..."
         fstype=$(lsblk "$device" -no fstype 2>/dev/null || echo "unknown")
-        log "DEBUG: lsblk command completed."
         log "Detected filesystem type: $fstype"
         
         # Get supported filesystems
-        log "DEBUG: Getting supported filesystems..."
         fstypessupport=$(grep -v nodev /proc/filesystems 2>/dev/null | awk '{print $2}' | tr '\n' ' ' | sed 's/ $//' || echo "ext2 ext3 ext4 vfat ntfs")
-        log "DEBUG: Supported filesystems retrieved."
         
         # Set filesystem-specific options
-        log "DEBUG: Setting filesystem-specific mount options for '$fstype'..."
         mount_options="nosuid,relatime,noexec"
         mount_type="auto"
         
@@ -200,57 +192,25 @@ mount_external_disks() {
         
         mount_success=false
         
-        # Check if we're on RPi4 with potential hanging issues
-        local is_rpi4=false
-        if [ -f /proc/cpuinfo ] && grep -q "Raspberry Pi 4" /proc/cpuinfo 2>/dev/null; then
-            is_rpi4=true
-            
-            # For RPi4 with large ext4 drives, warn but still try
-            if [ "$fstype" = "ext4" ]; then
-                local device_size=$(lsblk -b -n -o SIZE "$device" 2>/dev/null || echo "0")
-                if [ "$device_size" -gt 1000000000000 ]; then  # > 1TB
-                    log "WARNING: Large ext4 drive on RPi4 detected. This may hang - trying anyway..."
-                    log "INFO: If the addon hangs here, you may need to:"
-                    log "  - Add 'usb-storage.quirks=152d:0561:u' to /boot/cmdline.txt"
-                    log "  - Use a different filesystem (exFAT/NTFS)"
-                fi
-            fi
-        fi
+        # Mount the device
         
-        # Use exact mount command from alexbelgium addons
-        # They use: mount -t $type "$device" "$mount_point" -o $options
-        log "DEBUG: Attempting mount with: mount -t $mount_type '$device' '$mount_point' -o $mount_options"
-        
-        # Try mount with exact syntax from alexbelgium
-        if mount -t "$mount_type" "$device" "$mount_point" -o "$mount_options" 2>&1; then
+        # Try mount with filesystem type first
+        if mount -t "$mount_type" "$device" "$mount_point" -o "$mount_options" 2>/dev/null; then
             mount_success=true
-            log "SUCCESS: Device '$device' mounted to '$mount_point'."
+            log "Successfully mounted '$device' to '$mount_point'."
         else
             # If first attempt fails, try without type specification (auto-detect)
-            log "DEBUG: First mount failed, trying auto-detect..."
-            if mount "$device" "$mount_point" -o "$mount_options" 2>&1; then
+            if mount "$device" "$mount_point" -o "$mount_options" 2>/dev/null; then
                 mount_success=true
-                log "SUCCESS: Device '$device' mounted to '$mount_point' (auto-detected type)."
+                log "Successfully mounted '$device' to '$mount_point' (auto-detected type)."
             else
-                log "WARNING: Mount failed. Continuing without this mount."
+                log "WARNING: Failed to mount '$device'. Continuing without this mount."
             fi
         fi
         
-        
         if [ "$mount_success" = true ]; then
-            log "DEBUG: Mount operation completed successfully."
-            log "Successfully mounted '$device' to '$mount_point'."
             MOUNTED_PATHS+=("$mount_point")
         else
-            log "ERROR: Failed to mount '$device' to '$mount_point' after all attempts."
-            log "Filesystem type was: $fstype"
-            log "Mount options used: $mount_options"
-            
-            # CRITICAL FALLBACK: Don't let mount failures block addon startup
-            log "FALLBACK: Mount failed but addon will continue with default storage."
-            log "FALLBACK: You can manually mount the device later if needed."
-            log "FALLBACK: Device '$device' will be skipped for now."
-            
             # Clean up the created directory if mount fails
             rmdir "$mount_point" 2>/dev/null || true
         fi
@@ -258,11 +218,10 @@ mount_external_disks() {
 
     # Report summary
     if [ ${#MOUNTED_PATHS[@]} -gt 0 ]; then
-        log "Mounting summary: Successfully mounted/linked ${#MOUNTED_PATHS[@]} device(s)."
-        log "Mounted at: ${MOUNTED_PATHS[*]}"
+        log "Successfully mounted ${#MOUNTED_PATHS[@]} device(s) at: ${MOUNTED_PATHS[*]}"
         export BOOKLORE_LIBRARY_PATHS="${MOUNTED_PATHS[*]}"
     else
-        log "WARNING: No external devices were successfully mounted."
+        log "No external devices were mounted."
     fi
 }
 
@@ -272,14 +231,10 @@ cleanup_mounts() {
         return
     fi
 
-    log "Unmounting ${#MOUNTED_PATHS[@]} device(s)..."
     for mount_point in "${MOUNTED_PATHS[@]}"; do
         if mountpoint -q "$mount_point"; then
-            log "Unmounting '$mount_point'..."
             if umount "$mount_point"; then
                 rmdir "$mount_point" 2>/dev/null || true
-            else
-                log "WARNING: Failed to unmount '$mount_point' on shutdown."
             fi
         fi
     done
@@ -288,10 +243,8 @@ cleanup_mounts() {
 # Set up trap for cleanup on exit
 trap cleanup_mounts EXIT
 
-# Call the mount function directly - it has its own timeouts for each mount operation
-log "Starting external disk mounting..."
+# Mount external disks
 mount_external_disks
-log "External disk mounting process completed."
 
 USE_SVC="$(get_opt 'use_mysql_service' 'true')"
 DB_NAME="$(get_opt 'db_name' 'booklore')"
