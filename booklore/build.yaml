@@ -1,0 +1,8 @@
+build_from:
+  aarch64: "ghcr.io/home-assistant/aarch64-base:3.19"
+  amd64:   "ghcr.io/home-assistant/amd64-base:3.19"
+  armv7:   "ghcr.io/home-assistant/armv7-base:3.19"
+
+args:
+  # Pin the upstream BookLore version to build (latest as of 2025-07-28)
+  BOOKLORE_REF: "v0.35.0"
