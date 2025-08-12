@@ -255,121 +255,94 @@ mount_external_disks() {
         log "DEBUG: Mount command will be: timeout 10 mount -t '$mount_type' -o '$mount_options' '$device' '$mount_point'"
         log "Mounting '$device' to '$mount_point' with type '$mount_type' and options '$mount_options'..."
         
-        # Add comprehensive pre-mount diagnostics
-        log "DEBUG: Performing comprehensive device diagnostics..."
-        
-        # Test 1: Basic device accessibility
-        log "DEBUG: Testing device accessibility with 'blkid $device'..."
-        if timeout 5 blkid "$device" >/dev/null 2>&1; then
-            log "DEBUG: Device '$device' is accessible via blkid."
+        # Quick device accessibility test only
+        log "DEBUG: Quick device accessibility test..."
+        if timeout 2 blkid "$device" >/dev/null 2>&1; then
+            log "DEBUG: Device '$device' is accessible."
         else
-            log "WARNING: Device '$device' may not be accessible via blkid (or timed out)."
+            log "WARNING: Device '$device' may not be accessible. Proceeding anyway..."
         fi
         
-        # Test 2: Check for filesystem errors
-        log "DEBUG: Checking filesystem health..."
-        if [ "$fstype" = "ext4" ]; then
-            fsck_output=$(timeout 10 fsck.ext4 -n "$device" 2>&1 || echo "fsck failed or timed out")
-            if [[ "$fsck_output" == *"clean"* ]]; then
-                log "DEBUG: Filesystem appears clean."
-            else
-                log "WARNING: Filesystem may have issues: $fsck_output"
-            fi
-        fi
+        log "DEBUG: Starting mount operation with ultra-aggressive timeout strategy..."
         
-        # Test 3: Check if device is busy or has active processes
-        log "DEBUG: Checking for device usage..."
-        if command -v lsof >/dev/null 2>&1; then
-            device_usage=$(timeout 5 lsof "$device" 2>/dev/null || echo "")
-            if [ -n "$device_usage" ]; then
-                log "WARNING: Device has active processes: $device_usage"
-            else
-                log "DEBUG: No active processes found on device."
-            fi
-        fi
-        
-        log "DEBUG: Starting mount operation with aggressive timeout and fallback..."
-        
-        # Try the mount operation with explicit error handling
+        # Try the mount operation with ultra-aggressive timeout handling
         mount_success=false
         mount_output=""
         
-        # First attempt - use very short timeout to avoid hanging
-        log "DEBUG: Executing mount command with 10-second timeout..."
-        if [ "$fstype" = "ext4" ] || [ "$fstype" = "ext3" ] || [ "$fstype" = "ext2" ]; then
-            # For ext filesystems, try with explicit filesystem type first
-            mount_output=$(timeout 10 mount -t "$fstype" -o "$mount_options" "$device" "$mount_point" 2>&1)
-        else
-            mount_output=$(timeout 10 mount -t "$mount_type" -o "$mount_options" "$device" "$mount_point" 2>&1)
-        fi
+        # Strategy 1: Try simplest mount first (let kernel auto-detect filesystem)
+        log "DEBUG: Attempt 1 - Simple mount with 3-second timeout..."
+        mount_output=$(timeout 3 mount "$device" "$mount_point" 2>&1)
         mount_exit_code=$?
-        
-        # If the short timeout fails, try a different approach
-        if [ $mount_exit_code -eq 124 ]; then
-            log "WARNING: Mount timed out after 10 seconds. Trying alternative approach..."
-            
-            # Try with minimal options
-            log "DEBUG: Attempting mount with minimal options (no filesystem type specified)..."
-            mount_output=$(timeout 5 mount -o rw "$device" "$mount_point" 2>&1)
-            mount_exit_code=$?
-            
-            if [ $mount_exit_code -eq 124 ]; then
-                log "ERROR: Mount operation consistently timing out."
-                log "ERROR: Device '$device' appears to be causing kernel-level hanging."
-                log "CRITICAL: Skipping this device to prevent addon from hanging."
-                
-                # Clean up and continue
-                rmdir "$mount_point" 2>/dev/null || true
-                continue
-            fi
-        fi
         
         if [ $mount_exit_code -eq 0 ]; then
             mount_success=true
-            log "DEBUG: Mount operation succeeded on first attempt."
-        else
-            log "DEBUG: Mount operation failed with exit code: $mount_exit_code"
+            log "SUCCESS: Simple mount succeeded!"
+        elif [ $mount_exit_code -eq 124 ]; then
+            log "WARNING: Simple mount timed out after 3 seconds."
+            
+            # Strategy 2: Try with minimal read-only options
+            log "DEBUG: Attempt 2 - Read-only mount with 2-second timeout..."
+            mount_output=$(timeout 2 mount -o ro "$device" "$mount_point" 2>&1)
+            mount_exit_code=$?
+            
+            if [ $mount_exit_code -eq 0 ]; then
+                # Remount as read-write if successful
+                log "DEBUG: Read-only mount succeeded, attempting to remount as read-write..."
+                if mount -o remount,rw "$mount_point" 2>/dev/null; then
+                    mount_success=true
+                    log "SUCCESS: Remounted as read-write!"
+                else
+                    mount_success=true  # Still consider it success even if read-only
+                    log "WARNING: Mounted as read-only (could not remount as read-write)"
+                fi
+            elif [ $mount_exit_code -eq 124 ]; then
+                log "WARNING: Read-only mount also timed out."
+                
+                # Strategy 3: Try with explicit filesystem type but ultra-short timeout
+                if [ "$fstype" = "ext4" ] || [ "$fstype" = "ext3" ] || [ "$fstype" = "ext2" ]; then
+                    log "DEBUG: Attempt 3 - Mount with explicit $fstype type, 2-second timeout..."
+                    mount_output=$(timeout 2 mount -t "$fstype" "$device" "$mount_point" 2>&1)
+                    mount_exit_code=$?
+                    
+                    if [ $mount_exit_code -eq 0 ]; then
+                        mount_success=true
+                        log "SUCCESS: Mount with explicit filesystem type succeeded!"
+                    elif [ $mount_exit_code -eq 124 ]; then
+                        log "ERROR: All mount attempts timed out. Device appears to be hanging."
+                        log "CRITICAL: Skipping device '$device' to prevent addon from hanging."
+                        rmdir "$mount_point" 2>/dev/null || true
+                        continue
+                    fi
+                fi
+            fi
+        fi
+        
+        # If still not successful and not a timeout, try to handle specific error cases
+        if [ "$mount_success" = false ] && [ "$mount_exit_code" -ne 124 ]; then
+            log "DEBUG: Mount failed with exit code: $mount_exit_code"
             log "DEBUG: Mount error output: $mount_output"
             
-            # Handle specific error cases
-            if [ "$mount_exit_code" -eq 124 ]; then
-                log "ERROR: Mount operation timed out."
-            elif [ "$mount_exit_code" -eq 32 ]; then
-                log "WARNING: Mount point busy or device already mounted (exit code 32)."
+            if [ "$mount_exit_code" -eq 32 ]; then
+                log "WARNING: Mount point busy or device already mounted."
                 
-                # Additional cleanup for busy mount point
-                log "DEBUG: Performing additional cleanup for busy mount point..."
-                sleep 2
-                
-                # Force cleanup any remaining processes using the mount point
-                if command -v fuser >/dev/null 2>&1; then
-                    log "DEBUG: Checking for processes using mount point..."
-                    fuser -km "$mount_point" 2>/dev/null || true
-                    sleep 1
-                fi
-                
-                # Try to force unmount anything still there
+                # Quick cleanup attempt
                 umount -f "$mount_point" 2>/dev/null || true
-                umount -l "$mount_point" 2>/dev/null || true
-                sleep 2
+                sleep 1
                 
-                # Retry the mount after cleanup with shorter timeout
-                log "DEBUG: Retrying mount after cleanup..."
-                mount_output=$(timeout 5 mount -t "$mount_type" -o rw,noatime "$device" "$mount_point" 2>&1)
+                # Final attempt with 2-second timeout
+                log "DEBUG: Final attempt after cleanup..."
+                mount_output=$(timeout 2 mount "$device" "$mount_point" 2>&1)
                 if [ $? -eq 0 ]; then
                     mount_success=true
-                    log "DEBUG: Mount succeeded after cleanup."
-                else
-                    log "WARNING: Mount still failed after cleanup. Skipping device."
+                    log "SUCCESS: Mount succeeded after cleanup!"
                 fi
-            elif [[ "$fstype" =~ ^ext[234]$ ]] && [ "$mount_exit_code" -ne 0 ]; then
-                log "DEBUG: Retrying mount with explicit filesystem type for $fstype..."
-                mount_output=$(timeout 5 mount -t "$fstype" -o defaults "$device" "$mount_point" 2>&1)
+            elif [[ "$mount_output" == *"wrong fs type"* ]] || [[ "$mount_output" == *"bad option"* ]]; then
+                # Try once more with no options at all
+                log "DEBUG: Mount failed due to options/fs type. Trying with no options..."
+                mount_output=$(timeout 2 mount "$device" "$mount_point" 2>&1)
                 if [ $? -eq 0 ]; then
                     mount_success=true
-                    log "DEBUG: Retry mount succeeded with explicit filesystem type."
-                else
-                    log "DEBUG: Final retry mount also failed: $mount_output"
+                    log "SUCCESS: Mount succeeded with no options!"
                 fi
             fi
         fi
