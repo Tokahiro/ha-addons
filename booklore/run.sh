@@ -33,6 +33,8 @@ mount_external_disks() {
     local mounts_json mount_value device mount_point mount_name
     local base_mount="/share/booklore"
     local mount_opts="rw,noatime"
+    local global_start_time=$(date +%s)
+    local global_timeout=120  # 2 minutes global timeout
 
     # Check for legacy single mount option for backward compatibility
     if [ "$HAS_BASHIO" -eq 1 ]; then
@@ -87,6 +89,15 @@ mount_external_disks() {
     while IFS= read -r mount_value; do
         # Skip empty values that might result from jq parsing
         [ -z "$mount_value" ] && continue
+        
+        # Check global timeout
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - global_start_time))
+        if [ $elapsed -ge $global_timeout ]; then
+            log "WARNING: Global timeout reached after ${elapsed} seconds. Stopping mount attempts."
+            log "WARNING: Addon will continue with mounts completed so far."
+            break
+        fi
 
         log "--- Processing mount: $mount_value ---"
 
@@ -241,7 +252,7 @@ mount_external_disks() {
         
         # Attempt to mount the device with timeout
         log "DEBUG: About to attempt mount operation..."
-        log "DEBUG: Mount command will be: timeout 30 mount -t '$mount_type' -o '$mount_options' '$device' '$mount_point'"
+        log "DEBUG: Mount command will be: timeout 10 mount -t '$mount_type' -o '$mount_options' '$device' '$mount_point'"
         log "Mounting '$device' to '$mount_point' with type '$mount_type' and options '$mount_options'..."
         
         # Add comprehensive pre-mount diagnostics
@@ -284,31 +295,32 @@ mount_external_disks() {
         mount_output=""
         
         # First attempt - use very short timeout to avoid hanging
-        log "DEBUG: Executing mount command with 10-second timeout (aggressive)..."
-        mount_output=$(timeout 10 mount -t "$mount_type" -o "$mount_options" "$device" "$mount_point" 2>&1)
+        log "DEBUG: Executing mount command with 10-second timeout..."
+        if [ "$fstype" = "ext4" ] || [ "$fstype" = "ext3" ] || [ "$fstype" = "ext2" ]; then
+            # For ext filesystems, try with explicit filesystem type first
+            mount_output=$(timeout 10 mount -t "$fstype" -o "$mount_options" "$device" "$mount_point" 2>&1)
+        else
+            mount_output=$(timeout 10 mount -t "$mount_type" -o "$mount_options" "$device" "$mount_point" 2>&1)
+        fi
         mount_exit_code=$?
         
         # If the short timeout fails, try a different approach
         if [ $mount_exit_code -eq 124 ]; then
             log "WARNING: Mount timed out after 10 seconds. Trying alternative approach..."
             
-            # Try with minimal options and different filesystem type
-            log "DEBUG: Attempting mount with minimal options..."
-            mount_output=$(timeout 10 mount -o rw "$device" "$mount_point" 2>&1)
+            # Try with minimal options
+            log "DEBUG: Attempting mount with minimal options (no filesystem type specified)..."
+            mount_output=$(timeout 5 mount -o rw "$device" "$mount_point" 2>&1)
             mount_exit_code=$?
             
             if [ $mount_exit_code -eq 124 ]; then
-                log "ERROR: Mount operation consistently timing out. This suggests a kernel-level issue."
-                log "FALLBACK: Creating symbolic link to device for direct access..."
+                log "ERROR: Mount operation consistently timing out."
+                log "ERROR: Device '$device' appears to be causing kernel-level hanging."
+                log "CRITICAL: Skipping this device to prevent addon from hanging."
                 
-                # Create a symbolic link as fallback
-                if ln -sf "$device" "$mount_point/device_link" 2>/dev/null; then
-                    log "WARNING: Created symbolic link fallback at $mount_point/device_link"
-                    log "WARNING: This is not a proper mount but may allow some access."
-                    # Don't mark as success since it's not a real mount
-                else
-                    log "ERROR: Even symbolic link creation failed."
-                fi
+                # Clean up and continue
+                rmdir "$mount_point" 2>/dev/null || true
+                continue
             fi
         fi
         
@@ -321,7 +333,7 @@ mount_external_disks() {
             
             # Handle specific error cases
             if [ "$mount_exit_code" -eq 124 ]; then
-                log "ERROR: Mount operation timed out after 30 seconds."
+                log "ERROR: Mount operation timed out."
             elif [ "$mount_exit_code" -eq 32 ]; then
                 log "WARNING: Mount point busy or device already mounted (exit code 32)."
                 
@@ -341,21 +353,23 @@ mount_external_disks() {
                 umount -l "$mount_point" 2>/dev/null || true
                 sleep 2
                 
-                # Retry the mount after cleanup
+                # Retry the mount after cleanup with shorter timeout
                 log "DEBUG: Retrying mount after cleanup..."
-                mount_output=$(timeout 15 mount -t ext4 -o rw,noatime "$device" "$mount_point" 2>&1)
+                mount_output=$(timeout 5 mount -t "$mount_type" -o rw,noatime "$device" "$mount_point" 2>&1)
                 if [ $? -eq 0 ]; then
                     mount_success=true
                     log "DEBUG: Mount succeeded after cleanup."
+                else
+                    log "WARNING: Mount still failed after cleanup. Skipping device."
                 fi
-            elif [ "$fstype" = "ext4" ] && [ "$mount_exit_code" -ne 0 ]; then
-                log "DEBUG: Retrying mount with simpler options for ext4..."
-                mount_output=$(timeout 15 mount -t ext4 -o rw,noatime "$device" "$mount_point" 2>&1)
+            elif [[ "$fstype" =~ ^ext[234]$ ]] && [ "$mount_exit_code" -ne 0 ]; then
+                log "DEBUG: Retrying mount with explicit filesystem type for $fstype..."
+                mount_output=$(timeout 5 mount -t "$fstype" -o defaults "$device" "$mount_point" 2>&1)
                 if [ $? -eq 0 ]; then
                     mount_success=true
-                    log "DEBUG: Retry mount succeeded with simpler options."
+                    log "DEBUG: Retry mount succeeded with explicit filesystem type."
                 else
-                    log "DEBUG: Retry mount also failed: $mount_output"
+                    log "DEBUG: Final retry mount also failed: $mount_output"
                 fi
             fi
         fi
@@ -410,15 +424,10 @@ cleanup_mounts() {
 # Set up trap for cleanup on exit
 trap cleanup_mounts EXIT
 
-# Call the mount function with global timeout to prevent addon hanging
-log "Starting external disk mounting with global timeout..."
-if timeout 120 bash -c 'mount_external_disks' 2>/dev/null; then
-    log "External disk mounting completed within timeout."
-else
-    log "WARNING: External disk mounting timed out after 2 minutes."
-    log "WARNING: Addon will continue with default storage only."
-    log "WARNING: You can manually mount devices later if needed."
-fi
+# Call the mount function directly - it has its own timeouts for each mount operation
+log "Starting external disk mounting..."
+mount_external_disks
+log "External disk mounting process completed."
 
 USE_SVC="$(get_opt 'use_mysql_service' 'true')"
 DB_NAME="$(get_opt 'db_name' 'booklore')"
