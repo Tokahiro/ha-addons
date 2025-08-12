@@ -156,11 +156,11 @@ mount_external_disks() {
             fi
             
             log "INFO: Attempting to unmount '$device' from '$existing_mount'..."
-            if timeout 15 umount "$device" 2>/dev/null; then
+            if umount "$device" 2>/dev/null; then
                 log "DEBUG: Successfully unmounted '$device'."
             else
                 log "WARNING: Could not unmount '$device'. Trying lazy unmount..."
-                if timeout 10 umount -l "$device" 2>/dev/null; then
+                if umount -l "$device" 2>/dev/null; then
                     log "DEBUG: Lazy unmount successful."
                     sleep 2  # Give time for lazy unmount to complete
                 else
@@ -172,19 +172,19 @@ mount_external_disks() {
 
         # Check and clean up mount point
         log "DEBUG: Checking mount point '$mount_point' state..."
-        if timeout 5 mountpoint -q "$mount_point" 2>/dev/null; then
+        if mountpoint -q "$mount_point" 2>/dev/null; then
             log "WARNING: Mount point '$mount_point' is still in use. Attempting cleanup..."
-            if timeout 15 umount "$mount_point" 2>/dev/null; then
+            if umount "$mount_point" 2>/dev/null; then
                 log "DEBUG: Successfully unmounted mount point."
             else
                 log "WARNING: Trying lazy unmount on mount point..."
-                timeout 10 umount -l "$mount_point" 2>/dev/null || true
+                umount -l "$mount_point" 2>/dev/null || true
                 sleep 2
             fi
         fi
         
         # Final check - ensure mount point is clean
-        if timeout 5 mountpoint -q "$mount_point" 2>/dev/null; then
+        if mountpoint -q "$mount_point" 2>/dev/null; then
             log "ERROR: Mount point '$mount_point' is still busy after cleanup attempts. Skipping."
             continue
         fi
@@ -194,13 +194,13 @@ mount_external_disks() {
         # Detect filesystem type and set appropriate mount options
         log "DEBUG: Starting filesystem type detection for '$device'..."
         log "Detecting filesystem type for '$device'..."
-        fstype=$(timeout 10 lsblk "$device" -no fstype 2>/dev/null || echo "unknown")
+        fstype=$(lsblk "$device" -no fstype 2>/dev/null || echo "unknown")
         log "DEBUG: lsblk command completed."
         log "Detected filesystem type: $fstype"
         
         # Get supported filesystems
         log "DEBUG: Getting supported filesystems..."
-        fstypessupport=$(timeout 5 grep -v nodev /proc/filesystems 2>/dev/null | awk '{print $2}' | tr '\n' ' ' | sed 's/ $//' || echo "ext2 ext3 ext4 vfat ntfs")
+        fstypessupport=$(grep -v nodev /proc/filesystems 2>/dev/null | awk '{print $2}' | tr '\n' ' ' | sed 's/ $//' || echo "ext2 ext3 ext4 vfat ntfs")
         log "DEBUG: Supported filesystems retrieved."
         
         # Set filesystem-specific options
@@ -246,19 +246,20 @@ mount_external_disks() {
         
         # Add a pre-mount check to see if the device is accessible
         log "DEBUG: Testing device accessibility with 'blkid $device'..."
-        if timeout 10 blkid "$device" >/dev/null 2>&1; then
+        if blkid "$device" >/dev/null 2>&1; then
             log "DEBUG: Device '$device' is accessible via blkid."
         else
             log "WARNING: Device '$device' may not be accessible via blkid (or timed out)."
         fi
         
-        log "DEBUG: Starting mount operation with 30-second timeout..."
+        log "DEBUG: Starting mount operation with timeout..."
         
         # Try the mount operation with explicit error handling
         mount_success=false
         mount_output=""
         
-        # First attempt
+        # First attempt - use built-in timeout command which is more reliable
+        log "DEBUG: Executing mount command with 30-second timeout..."
         mount_output=$(timeout 30 mount -t "$mount_type" -o "$mount_options" "$device" "$mount_point" 2>&1)
         mount_exit_code=$?
         
@@ -282,13 +283,13 @@ mount_external_disks() {
                 # Force cleanup any remaining processes using the mount point
                 if command -v fuser >/dev/null 2>&1; then
                     log "DEBUG: Checking for processes using mount point..."
-                    timeout 5 fuser -km "$mount_point" 2>/dev/null || true
+                    fuser -km "$mount_point" 2>/dev/null || true
                     sleep 1
                 fi
                 
                 # Try to force unmount anything still there
-                timeout 10 umount -f "$mount_point" 2>/dev/null || true
-                timeout 10 umount -l "$mount_point" 2>/dev/null || true
+                umount -f "$mount_point" 2>/dev/null || true
+                umount -l "$mount_point" 2>/dev/null || true
                 sleep 2
                 
                 # Retry the mount after cleanup
