@@ -246,26 +246,23 @@ trap cleanup_mounts EXIT
 # Mount external disks
 mount_external_disks
 
-USE_SVC="$(get_opt 'use_mysql_service' 'true')"
 DB_NAME="$(get_opt 'db_name' 'booklore')"
-SWAGGER_ENABLED="$(get_opt 'swagger_enabled' 'false')"
 
 # ---- MariaDB auto-discovery or manual fallback ----
-if [ "$USE_SVC" = "true" ]; then
-  if [ "$HAS_BASHIO" -eq 1 ] && bashio::services.available "mysql"; then
-    DB_HOST="$(bashio::services 'mysql' 'host')"
-    DB_PORT="$(bashio::services 'mysql' 'port')"
-    DB_USER="$(bashio::services 'mysql' 'username')"
-    DB_PASS="$(bashio::services 'mysql' 'password')"
-    log "Using MariaDB service discovery at ${DB_HOST}:${DB_PORT}"
-  elif [ -n "${SUPERVISOR_TOKEN:-}" ] && curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/services/mysql >/dev/null; then
-    JSON="$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/services/mysql)"
-    DB_HOST="$(echo "$JSON" | jq -r '.data.host // .data.mysql.host')"
-    DB_PORT="$(echo "$JSON" | jq -r '.data.port // .data.mysql.port')"
-    DB_USER="$(echo "$JSON" | jq -r '.data.username // .data.mysql.username')"
-    DB_PASS="$(echo "$JSON" | jq -r '.data.password // .data.mysql.password')"
-    log "Using MariaDB (raw Services API) at ${DB_HOST}:${DB_PORT}"
-  fi
+# Always try service discovery first (since we have mysql:need in config)
+if [ "$HAS_BASHIO" -eq 1 ] && bashio::services.available "mysql"; then
+  DB_HOST="$(bashio::services 'mysql' 'host')"
+  DB_PORT="$(bashio::services 'mysql' 'port')"
+  DB_USER="$(bashio::services 'mysql' 'username')"
+  DB_PASS="$(bashio::services 'mysql' 'password')"
+  log "Using MariaDB service discovery at ${DB_HOST}:${DB_PORT}"
+elif [ -n "${SUPERVISOR_TOKEN:-}" ] && curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/services/mysql >/dev/null; then
+  JSON="$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/services/mysql)"
+  DB_HOST="$(echo "$JSON" | jq -r '.data.host // .data.mysql.host')"
+  DB_PORT="$(echo "$JSON" | jq -r '.data.port // .data.mysql.port')"
+  DB_USER="$(echo "$JSON" | jq -r '.data.username // .data.mysql.username')"
+  DB_PASS="$(echo "$JSON" | jq -r '.data.password // .data.mysql.password')"
+  log "Using MariaDB (raw Services API) at ${DB_HOST}:${DB_PORT}"
 fi
 
 if [ -z "${DB_HOST:-}" ]; then
@@ -280,7 +277,6 @@ fi
 export DATABASE_URL="jdbc:mariadb://${DB_HOST}:${DB_PORT}/${DB_NAME}"
 export DATABASE_USERNAME="${DB_USER}"
 export DATABASE_PASSWORD="${DB_PASS}"
-export SWAGGER_ENABLED="${SWAGGER_ENABLED}"
 
 # ---- Start backend on 8080 (as upstream expects behind NGINX) ----
 if [ ! -f /app/app.jar ]; then

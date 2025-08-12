@@ -16,7 +16,6 @@ Most users don't need to change anything - BookLore works great out of the box!
 
 ```yaml
 # Default configuration (works for most users)
-use_mysql_service: true
 db_name: "booklore"
 mounts: []
 ```
@@ -41,7 +40,6 @@ BookLore automatically finds and uses the MariaDB add-on for best performance. I
 
 **Want to use a different database?**
 ```yaml
-use_mysql_service: false
 db_host: "your-database-server"
 db_user: "your-username"
 db_password: "your-password"

@@ -1,6 +1,6 @@
 name: "BookLore"
 slug: "booklore"
-version: "0.20.39"                 # add-on version (not the BookLore image tag)
+version: "0.21.0"                 # add-on version (not the BookLore image tag)
 description: "Self-hosted book & comic library with metadata, OPDS, multi-user and built-in reader."
 url: "https://github.com/Tokahiro/ha-addons/tree/main/booklore"
 arch:
@@ -110,21 +110,17 @@ homeassistant: "2023.12.0"
 
 # --- Configuration tab (shown in Supervisor UI) ---
 options:
-  use_mysql_service: true
   db_host: "core-mariadb"     # Fallback host if not using discovery
   db_port: 3306
   db_name: "booklore"
   db_user: "booklore"
   db_password: "CHANGE_ME"
-  swagger_enabled: false
   mounts: []  # List of device paths or labels to mount
 schema:
-  use_mysql_service: bool
   db_host: str
   db_port: int
   db_name: str
   db_user: str
   db_password: password
-  swagger_enabled: bool
   mounts:
     - "str?"
