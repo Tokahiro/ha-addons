@@ -1,6 +1,6 @@
 name: "BookLore"
 slug: "booklore"
-version: "0.20.31"                 # add-on version (not the BookLore image tag)
+version: "0.20.32"                 # add-on version (not the BookLore image tag)
 description: "Self-hosted book & comic library with metadata, OPDS, multi-user and built-in reader."
 url: "https://github.com/Tokahiro/ha-addons/tree/main/booklore"
 arch:
@@ -73,7 +73,7 @@ options:
   db_user: "booklore"
   db_password: "CHANGE_ME"
   swagger_enabled: false
-  mounts: []  # List of device paths or labels
+  mounts: []  # List of device paths or labels to mount
 schema:
   use_mysql_service: bool
   db_host: str
