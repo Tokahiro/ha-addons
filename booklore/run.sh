@@ -31,7 +31,7 @@ declare -a MOUNTED_PATHS=()
 
 mount_external_disks() {
     local mounts_json mount_value device mount_point mount_name
-    local base_mount="/share/booklore"
+    local base_mount="/mnt"  # Use /mnt like alexbelgium addons, not /share
     local mount_opts="rw,noatime"
     local global_start_time=$(date +%s)
     local global_timeout=120  # 2 minutes global timeout
@@ -125,82 +125,27 @@ mount_external_disks() {
         
         # Create unique mount point
         mount_point="${base_mount}/${mount_name}"
-        log "DEBUG: Creating mount point '$mount_point'..."
-        mkdir -p "$mount_point"
-        log "DEBUG: Mount point '$mount_point' created successfully."
-
-        # Enhanced mount state detection and cleanup
-        log "DEBUG: Performing comprehensive mount state check..."
         
-        # Check if device is already mounted anywhere (multiple methods)
-        log "DEBUG: Checking if device '$device' is already mounted..."
-        existing_mount=""
-        
-        # Method 1: Check /proc/mounts
-        if [ -f /proc/mounts ]; then
-            existing_mount=$(grep "^$device " /proc/mounts | awk '{print $2}' | head -n1 2>/dev/null || echo "")
-        fi
-        
-        # Method 2: Use findmnt if available
-        if [ -z "$existing_mount" ] && command -v findmnt >/dev/null 2>&1; then
-            existing_mount=$(timeout 5 findmnt -rn -S "$device" -o TARGET 2>/dev/null | head -n1 || echo "")
-        fi
-        
-        # Method 3: Fallback to mount command
-        if [ -z "$existing_mount" ]; then
-            existing_mount=$(timeout 10 sh -c "mount | grep '^$device ' | awk '{print \$3}' | head -n1" 2>/dev/null || echo "")
-        fi
-        
-        log "DEBUG: Existing mount check completed. Result: '${existing_mount:-none}'"
+        # Check if device is already mounted somewhere
+        existing_mount=$(findmnt -rn -S "$device" -o TARGET 2>/dev/null | head -n1 || echo "")
         
         if [ -n "$existing_mount" ]; then
-            log "WARNING: Device '$device' is already mounted at '$existing_mount'."
-            if [ "$existing_mount" = "$mount_point" ]; then
-                log "INFO: Device is already mounted at our target location. Checking if accessible..."
-                if [ -d "$mount_point" ] && [ -r "$mount_point" ]; then
-                    log "SUCCESS: Device '$device' is already properly mounted at '$mount_point'."
-                    MOUNTED_PATHS+=("$mount_point")
-                    continue
-                else
-                    log "WARNING: Mount exists but is not accessible. Attempting to remount..."
-                fi
-            fi
-            
-            log "INFO: Attempting to unmount '$device' from '$existing_mount'..."
-            if umount "$device" 2>/dev/null; then
-                log "DEBUG: Successfully unmounted '$device'."
+            log "INFO: Device '$device' is already mounted at '$existing_mount'."
+            # Create a symlink to the existing mount if it's not at our expected location
+            if [ "$existing_mount" != "$mount_point" ]; then
+                log "INFO: Creating symlink from '$mount_point' to existing mount at '$existing_mount'."
+                mkdir -p "$(dirname "$mount_point")"
+                ln -sfn "$existing_mount" "$mount_point"
+                MOUNTED_PATHS+=("$mount_point")
             else
-                log "WARNING: Could not unmount '$device'. Trying lazy unmount..."
-                if umount -l "$device" 2>/dev/null; then
-                    log "DEBUG: Lazy unmount successful."
-                    sleep 2  # Give time for lazy unmount to complete
-                else
-                    log "ERROR: Could not unmount '$device' from '$existing_mount'. Skipping."
-                    continue
-                fi
+                MOUNTED_PATHS+=("$mount_point")
             fi
-        fi
-
-        # Check and clean up mount point
-        log "DEBUG: Checking mount point '$mount_point' state..."
-        if mountpoint -q "$mount_point" 2>/dev/null; then
-            log "WARNING: Mount point '$mount_point' is still in use. Attempting cleanup..."
-            if umount "$mount_point" 2>/dev/null; then
-                log "DEBUG: Successfully unmounted mount point."
-            else
-                log "WARNING: Trying lazy unmount on mount point..."
-                umount -l "$mount_point" 2>/dev/null || true
-                sleep 2
-            fi
-        fi
-        
-        # Final check - ensure mount point is clean
-        if mountpoint -q "$mount_point" 2>/dev/null; then
-            log "ERROR: Mount point '$mount_point' is still busy after cleanup attempts. Skipping."
             continue
         fi
         
-        log "DEBUG: Mount point check and cleanup completed."
+        # Create mount point if it doesn't exist
+        log "DEBUG: Creating mount point '$mount_point'..."
+        mkdir -p "$mount_point"
 
         # Detect filesystem type and set appropriate mount options
         log "DEBUG: Starting filesystem type detection for '$device'..."
@@ -250,8 +195,8 @@ mount_external_disks() {
                 ;;
         esac
         
-        # Attempt to mount the device - using simple approach like alexbelgium addons
-        log "Mounting '$device' to '$mount_point' with type '$mount_type' and options '$mount_options'..."
+        # Attempt to mount the device - using exact approach from alexbelgium addons
+        log "Mounting '$device' to '$mount_point'..."
         
         mount_success=false
         
@@ -272,38 +217,17 @@ mount_external_disks() {
             fi
         fi
         
-        # Try simple mount command like alexbelgium addons do
-        # They just use mount directly - if it hangs, it hangs (but warn the user)
-        log "DEBUG: Attempting mount (this may take a moment)..."
+        # Use exact mount command from alexbelgium addons
+        # They use: mount -t $type "$device" "$mount_point" -o $options
+        log "DEBUG: Attempting mount with: mount -t $mount_type '$device' '$mount_point' -o $mount_options"
         
-        if mount -t "$mount_type" -o "$mount_options" "$device" "$mount_point"; then
+        if mount -t "$mount_type" "$device" "$mount_point" -o "$mount_options"; then
             mount_success=true
             log "SUCCESS: Device '$device' mounted to '$mount_point'."
         else
-            # If that fails, try with simpler options
-            log "DEBUG: First mount attempt failed, trying with simpler options..."
-            
-            # Try without specifying type (let mount auto-detect)
-            if mount -o "$mount_options" "$device" "$mount_point"; then
-                mount_success=true
-                log "SUCCESS: Device '$device' mounted to '$mount_point' (auto-detected type)."
-            else
-                # Try with minimal options
-                log "DEBUG: Second attempt failed, trying with minimal options..."
-                if mount "$device" "$mount_point"; then
-                    mount_success=true
-                    log "SUCCESS: Device '$device' mounted to '$mount_point' (minimal options)."
-                else
-                    # Last attempt - try with defaults option
-                    log "DEBUG: Third attempt failed, trying with defaults..."
-                    if mount -o defaults "$device" "$mount_point"; then
-                        mount_success=true
-                        log "SUCCESS: Device '$device' mounted to '$mount_point' (defaults)."
-                    else
-                        log "WARNING: All mount attempts failed for '$device'."
-                    fi
-                fi
-            fi
+            log "WARNING: Mount failed. Error may be shown above."
+            # alexbelgium addons stop the addon if mount fails, but we'll continue
+            log "WARNING: Continuing without this mount."
         fi
         
         
@@ -328,7 +252,8 @@ mount_external_disks() {
 
     # Report summary
     if [ ${#MOUNTED_PATHS[@]} -gt 0 ]; then
-        log "Mounting summary: Successfully mounted ${#MOUNTED_PATHS[@]} device(s)."
+        log "Mounting summary: Successfully mounted/linked ${#MOUNTED_PATHS[@]} device(s)."
+        log "Mounted at: ${MOUNTED_PATHS[*]}"
         export BOOKLORE_LIBRARY_PATHS="${MOUNTED_PATHS[*]}"
     else
         log "WARNING: No external devices were successfully mounted."
