@@ -1,41 +1,42 @@
 # BookLore - Home Assistant Add-on
 
-> 📚 **Version 0.19.0** - A powerful self-hosted book & comic library for Home Assistant.
+> 📚 **Version 0.20.34** - Your personal digital library
 
-![Version](https://img.shields.io/badge/version-0.19.0-blue.svg)
-![Arch](https://img.shields.io/badge/arch-aarch64%20%7C%20amd64%20%7C%20armhf%20%7C%20armv7%20%7C%20i386-green.svg)
+![Version](https://img.shields.io/badge/version-0.20.34-blue.svg)
+![Arch](https://img.shields.io/badge/arch-aarch64%20%7C%20amd64%20%7C%20armv7-green.svg)
 ![Status](https://img.shields.io/badge/status-stable-green.svg)
 
-## 🎯 About
+## What is BookLore?
 
-Transform your Home Assistant into a professional-grade digital library. BookLore provides a complete solution for organizing, reading, and sharing your book and comic collection.
+Transform your Home Assistant into a powerful book server! BookLore organizes your digital books and comics with beautiful covers, metadata, and a built-in reader.
 
-## ✨ Key Features
+## ✨ Features
 
-- **Advanced Library Management**: Catalogs your collection with rich, automatically-fetched metadata.
-- **Enhanced Storage Support**: Works with network shares (SMB/CIFS, NFS) and locally attached USB drives.
-- **Multi-Platform Access**: Features a built-in web reader and an OPDS server for mobile apps like Moon+ Reader.
-- **Multi-User Support**: Provides individual accounts, tracking personal progress and preferences.
-- **Seamless Home Assistant Integration**: Integrates with Home Assistant's authentication, ingress, and auto-discovers the MariaDB add-on.
+- 📚 **Smart Library** - Automatically organizes books with covers and info
+- 💾 **External Storage** - Works with USB drives, external disks, NAS
+- 🔧 **Raspberry Pi Ready** - Optimized for RPi4 + Argon EON
+- 📱 **Mobile Access** - Read on any device with OPDS support
+- 👥 **Multi-User** - Personal accounts and reading progress
+- 🔒 **Secure** - Uses Home Assistant authentication
 
 ## 🚀 Quick Start
 
-1.  **Install the add-on** from the Home Assistant add-on store.
-2.  **Start the add-on** with the default configuration. It will automatically use the MariaDB add-on if available.
-3.  **Access BookLore** from your Home Assistant sidebar.
-4.  **Add your books** to the `/media` folder.
+1. **Install** BookLore from the Home Assistant add-on store
+2. **Start** the add-on (default settings work great!)
+3. **Access** BookLore from your Home Assistant sidebar
+4. **Add books** to `/media` folder or connect external storage
 
-## 📚 Documentation
+## 📖 Documentation
 
-For detailed instructions on configuration, storage, mobile access, and troubleshooting, please see the full documentation available in the **"Documentation" tab** of the add-on.
+Need help with setup or external storage? Check the **Documentation** tab in the add-on for detailed instructions.
 
 ## 🙏 Credits
 
-This add-on is a Home Assistant wrapper around the incredible work of the [BookLore development team](https://github.com/adityachandelgit/booklore-app). All core functionality comes from their original project.
+Built on the amazing [BookLore project](https://github.com/adityachandelgit/booklore-app) by the BookLore team.
 
-🌟 **Please star the original project:** https://github.com/adityachandelgit/booklore-app
+🌟 **Please star the original project!**
 
 ## 🆘 Support
 
--   For **add-on issues** (installation, configuration), please use this repository's [issue tracker](https://github.com/Tokahiro/ha-addons/issues).
--   For **feature requests** or app-specific issues, visit the [original BookLore repository](https://github.com/adityachandelgit/booklore-app).
+- **Add-on issues**: [GitHub Issues](https://github.com/Tokahiro/ha-addons/issues)
+- **App features**: [Original BookLore repo](https://github.com/adityachandelgit/booklore-app)

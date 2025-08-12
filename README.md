@@ -2,7 +2,7 @@
 
 # 🏠 Tokahiro's Home Assistant Add-ons
 
-*High-quality add-ons for your Home Assistant setup - maintained as a hobby project*
+*High-quality add-ons for your Home Assistant setup*
 
 [![GitHub stars](https://img.shields.io/github/stars/Tokahiro/ha-addons?style=flat-square)](https://github.com/Tokahiro/ha-addons/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/Tokahiro/ha-addons?style=flat-square)](https://github.com/Tokahiro/ha-addons/issues)
@@ -27,69 +27,46 @@ Ready to enhance your Home Assistant? Add this repository in one click:
 </div>
 
 ### Manual Installation
-1. Navigate to **Settings** → **Add-ons** → **Add-on Store** in Home Assistant
+1. Go to **Settings** → **Add-ons** → **Add-on Store** in Home Assistant
 2. Click **⋮** (three dots) → **Repositories**
 3. Add: `https://github.com/Tokahiro/ha-addons`
-4. Find your desired add-on and install!
+4. Find your add-on and install!
 
 ---
 
-## 📚 Featured Add-ons
-
-<table>
-<tr>
-<td width="50%" valign="top">
+## 📚 Available Add-ons
 
 ### 📖 BookLore
-*Professional digital library management*
+*Your personal digital library*
 
-Transform your Home Assistant into a powerful book server with BookLore - a complete library management solution that rivals commercial alternatives.
+Transform your Home Assistant into a powerful book server with automatic organization, beautiful covers, and mobile access.
 
 **✨ What makes it special:**
-- 📚 **Smart Library** - Auto-fetches metadata, covers, and book info
-- 📱 **Universal Access** - Web reader + OPDS for any mobile app
-- 👥 **Multi-User** - Individual accounts with personal progress tracking
-- 🔒 **Secure** - Integrates seamlessly with Home Assistant authentication
-- 🗄️ **Database Ready** - Auto-configures with MySQL/MariaDB
-- 📊 **Analytics** - Detailed reading statistics and recommendations
+- 📚 **Smart Library** - Auto-organizes books with covers and metadata
+- 💾 **Universal Storage** - USB drives, SATA, NVMe, SD cards
+- 🔧 **Hardware Optimized** - Perfect for Raspberry Pi 4 + Argon EON
+- 📱 **Mobile Ready** - OPDS support for any reading app
+- 👥 **Multi-User** - Personal accounts and reading progress
+- 🔒 **Secure** - Home Assistant authentication built-in
 
-**Perfect for:** Book lovers, families, digital library enthusiasts
-
-</td>
-<td width="50%" valign="top">
-
-### 🚀 Coming Soon...
-*More amazing add-ons in development*
-
-Have an idea for a great Home Assistant add-on? 
-
-**Get involved:**
-- 💡 [Suggest new add-ons](https://github.com/Tokahiro/ha-addons/discussions)
-- 🐛 [Report issues](https://github.com/Tokahiro/ha-addons/issues)
-- ⭐ Star this repo to show support!
-
-*Quality over quantity - each add-on is carefully crafted*
-
-</td>
-</tr>
-</table>
+**Perfect for:** Book lovers, families, digital library enthusiasts, NAS users
 
 ---
 
 ## 🛠️ Installation & Setup
 
 ### Step 1: Add Repository
-Use the one-click button above or manually add the repository URL to your Home Assistant add-on store.
+Use the one-click button above or manually add the repository URL.
 
 ### Step 2: Install Add-on
 1. Find your desired add-on in the store
 2. Click **Install** and wait for completion
-3. Review the **Documentation** tab for setup instructions
+3. Check the **Documentation** tab for setup instructions
 
 ### Step 3: Configure & Enjoy
-1. Configure any required options
+1. Configure any required options (most work with defaults!)
 2. Start the add-on
-3. Access through Home Assistant sidebar or ingress
+3. Access through Home Assistant sidebar
 
 ---
 
@@ -99,9 +76,9 @@ Use the one-click button above or manually add the repository URL to your Home A
 
 | 🎯 **Quality First** | 🔒 **Security Focused** | 🚀 **Performance Optimized** |
 |:---:|:---:|:---:|
-| Thoroughly tested and documented | Home Assistant native authentication | Efficient resource usage |
-| Regular updates and maintenance | Secure ingress integration | Optimized Docker images |
-| Community feedback incorporated | No unnecessary port exposure | Auto-scaling configurations |
+| Thoroughly tested | Home Assistant native auth | Efficient resource usage |
+| Regular updates | Secure ingress integration | Optimized Docker images |
+| Community feedback | No unnecessary ports | Auto-scaling configs |
 
 </div>
 
@@ -112,9 +89,8 @@ Use the one-click button above or manually add the repository URL to your Home A
 - **Home Assistant OS** or **Home Assistant Supervised**
 - **Add-on support enabled** (standard in most installations)
 - **Sufficient storage space** (varies by add-on)
-- **Network connectivity** for initial setup and updates
 
-Individual add-ons may have additional requirements - check their documentation for details.
+Individual add-ons may have additional requirements - check their documentation.
 
 ---
 
@@ -128,23 +104,13 @@ Individual add-ons may have additional requirements - check their documentation 
 
 </div>
 
-**Note:** This is a hobby project maintained in spare time. Responses when time permits.
-
----
-
-## 🔄 Development & Updates
-
-- **Hobby Project**: Maintained in spare time with varying availability
-- **Best Effort Updates**: Updates when time permits and issues arise
-- **Semantic Versioning**: Clear version numbering for tracking changes  
-- **Changelog**: Detailed release notes for every update
-- **Community Welcome**: Contributions and help are always appreciated
+**Note:** This is a hobby project maintained in spare time.
 
 ---
 
 ## 📄 License & Credits
 
-This project is licensed under the **MIT License** - see individual add-on directories for specific details.
+Licensed under the **MIT License** - see individual add-on directories for details.
 
 ### Special Thanks
 - 🏠 **Home Assistant Team** - For creating an amazing platform
@@ -165,7 +131,7 @@ This project is licensed under the **MIT License** - see individual add-on direc
 
 ## ⚠️ Disclaimer
 
-**Use at your own risk.** This is a hobby project maintained in spare time with no guarantees of support, updates, or response times. Community contributions are welcomed.
+**Use at your own risk.** This is a hobby project with no guarantees of support or response times. Community contributions are welcomed.
 
 ---
 
