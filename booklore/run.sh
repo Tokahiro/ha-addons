@@ -244,24 +244,73 @@ mount_external_disks() {
         log "DEBUG: Mount command will be: timeout 30 mount -t '$mount_type' -o '$mount_options' '$device' '$mount_point'"
         log "Mounting '$device' to '$mount_point' with type '$mount_type' and options '$mount_options'..."
         
-        # Add a pre-mount check to see if the device is accessible
+        # Add comprehensive pre-mount diagnostics
+        log "DEBUG: Performing comprehensive device diagnostics..."
+        
+        # Test 1: Basic device accessibility
         log "DEBUG: Testing device accessibility with 'blkid $device'..."
-        if blkid "$device" >/dev/null 2>&1; then
+        if timeout 5 blkid "$device" >/dev/null 2>&1; then
             log "DEBUG: Device '$device' is accessible via blkid."
         else
             log "WARNING: Device '$device' may not be accessible via blkid (or timed out)."
         fi
         
-        log "DEBUG: Starting mount operation with timeout..."
+        # Test 2: Check for filesystem errors
+        log "DEBUG: Checking filesystem health..."
+        if [ "$fstype" = "ext4" ]; then
+            fsck_output=$(timeout 10 fsck.ext4 -n "$device" 2>&1 || echo "fsck failed or timed out")
+            if [[ "$fsck_output" == *"clean"* ]]; then
+                log "DEBUG: Filesystem appears clean."
+            else
+                log "WARNING: Filesystem may have issues: $fsck_output"
+            fi
+        fi
+        
+        # Test 3: Check if device is busy or has active processes
+        log "DEBUG: Checking for device usage..."
+        if command -v lsof >/dev/null 2>&1; then
+            device_usage=$(timeout 5 lsof "$device" 2>/dev/null || echo "")
+            if [ -n "$device_usage" ]; then
+                log "WARNING: Device has active processes: $device_usage"
+            else
+                log "DEBUG: No active processes found on device."
+            fi
+        fi
+        
+        log "DEBUG: Starting mount operation with aggressive timeout and fallback..."
         
         # Try the mount operation with explicit error handling
         mount_success=false
         mount_output=""
         
-        # First attempt - use built-in timeout command which is more reliable
-        log "DEBUG: Executing mount command with 30-second timeout..."
-        mount_output=$(timeout 30 mount -t "$mount_type" -o "$mount_options" "$device" "$mount_point" 2>&1)
+        # First attempt - use very short timeout to avoid hanging
+        log "DEBUG: Executing mount command with 10-second timeout (aggressive)..."
+        mount_output=$(timeout 10 mount -t "$mount_type" -o "$mount_options" "$device" "$mount_point" 2>&1)
         mount_exit_code=$?
+        
+        # If the short timeout fails, try a different approach
+        if [ $mount_exit_code -eq 124 ]; then
+            log "WARNING: Mount timed out after 10 seconds. Trying alternative approach..."
+            
+            # Try with minimal options and different filesystem type
+            log "DEBUG: Attempting mount with minimal options..."
+            mount_output=$(timeout 10 mount -o rw "$device" "$mount_point" 2>&1)
+            mount_exit_code=$?
+            
+            if [ $mount_exit_code -eq 124 ]; then
+                log "ERROR: Mount operation consistently timing out. This suggests a kernel-level issue."
+                log "FALLBACK: Creating symbolic link to device for direct access..."
+                
+                # Create a symbolic link as fallback
+                if ln -sf "$device" "$mount_point/device_link" 2>/dev/null; then
+                    log "WARNING: Created symbolic link fallback at $mount_point/device_link"
+                    log "WARNING: This is not a proper mount but may allow some access."
+                    # Don't mark as success since it's not a real mount
+                else
+                    log "ERROR: Even symbolic link creation failed."
+                fi
+            fi
+        fi
         
         if [ $mount_exit_code -eq 0 ]; then
             mount_success=true
@@ -319,6 +368,12 @@ mount_external_disks() {
             log "ERROR: Failed to mount '$device' to '$mount_point' after all attempts."
             log "Filesystem type was: $fstype"
             log "Mount options used: $mount_options"
+            
+            # CRITICAL FALLBACK: Don't let mount failures block addon startup
+            log "FALLBACK: Mount failed but addon will continue with default storage."
+            log "FALLBACK: You can manually mount the device later if needed."
+            log "FALLBACK: Device '$device' will be skipped for now."
+            
             # Clean up the created directory if mount fails
             rmdir "$mount_point" 2>/dev/null || true
         fi
@@ -355,8 +410,15 @@ cleanup_mounts() {
 # Set up trap for cleanup on exit
 trap cleanup_mounts EXIT
 
-# Call the mount function
-mount_external_disks
+# Call the mount function with global timeout to prevent addon hanging
+log "Starting external disk mounting with global timeout..."
+if timeout 120 bash -c 'mount_external_disks' 2>/dev/null; then
+    log "External disk mounting completed within timeout."
+else
+    log "WARNING: External disk mounting timed out after 2 minutes."
+    log "WARNING: Addon will continue with default storage only."
+    log "WARNING: You can manually mount devices later if needed."
+fi
 
 USE_SVC="$(get_opt 'use_mysql_service' 'true')"
 DB_NAME="$(get_opt 'db_name' 'booklore')"
