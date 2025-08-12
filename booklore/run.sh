@@ -118,25 +118,78 @@ mount_external_disks() {
         mkdir -p "$mount_point"
         log "DEBUG: Mount point '$mount_point' created successfully."
 
-        # Check if device is already mounted somewhere else
+        # Enhanced mount state detection and cleanup
+        log "DEBUG: Performing comprehensive mount state check..."
+        
+        # Check if device is already mounted anywhere (multiple methods)
         log "DEBUG: Checking if device '$device' is already mounted..."
-        existing_mount=$(timeout 10 sh -c "mount | grep '^$device ' | awk '{print \$3}' | head -n1" 2>/dev/null || echo "")
+        existing_mount=""
+        
+        # Method 1: Check /proc/mounts
+        if [ -f /proc/mounts ]; then
+            existing_mount=$(grep "^$device " /proc/mounts | awk '{print $2}' | head -n1 2>/dev/null || echo "")
+        fi
+        
+        # Method 2: Use findmnt if available
+        if [ -z "$existing_mount" ] && command -v findmnt >/dev/null 2>&1; then
+            existing_mount=$(timeout 5 findmnt -rn -S "$device" -o TARGET 2>/dev/null | head -n1 || echo "")
+        fi
+        
+        # Method 3: Fallback to mount command
+        if [ -z "$existing_mount" ]; then
+            existing_mount=$(timeout 10 sh -c "mount | grep '^$device ' | awk '{print \$3}' | head -n1" 2>/dev/null || echo "")
+        fi
+        
         log "DEBUG: Existing mount check completed. Result: '${existing_mount:-none}'"
+        
         if [ -n "$existing_mount" ]; then
-            log "WARNING: Device '$device' is already mounted at '$existing_mount'. Unmounting first."
-            umount "$device" || {
-                log "ERROR: Could not unmount '$device' from '$existing_mount'. Skipping."
-                continue
-            }
+            log "WARNING: Device '$device' is already mounted at '$existing_mount'."
+            if [ "$existing_mount" = "$mount_point" ]; then
+                log "INFO: Device is already mounted at our target location. Checking if accessible..."
+                if [ -d "$mount_point" ] && [ -r "$mount_point" ]; then
+                    log "SUCCESS: Device '$device' is already properly mounted at '$mount_point'."
+                    MOUNTED_PATHS+=("$mount_point")
+                    continue
+                else
+                    log "WARNING: Mount exists but is not accessible. Attempting to remount..."
+                fi
+            fi
+            
+            log "INFO: Attempting to unmount '$device' from '$existing_mount'..."
+            if timeout 15 umount "$device" 2>/dev/null; then
+                log "DEBUG: Successfully unmounted '$device'."
+            else
+                log "WARNING: Could not unmount '$device'. Trying lazy unmount..."
+                if timeout 10 umount -l "$device" 2>/dev/null; then
+                    log "DEBUG: Lazy unmount successful."
+                    sleep 2  # Give time for lazy unmount to complete
+                else
+                    log "ERROR: Could not unmount '$device' from '$existing_mount'. Skipping."
+                    continue
+                fi
+            fi
         fi
 
-        # Unmount if mount point is already in use
-        log "DEBUG: Checking if mount point '$mount_point' is already in use..."
+        # Check and clean up mount point
+        log "DEBUG: Checking mount point '$mount_point' state..."
         if timeout 5 mountpoint -q "$mount_point" 2>/dev/null; then
-            log "WARNING: Mount point '$mount_point' is already in use. Unmounting first."
-            timeout 10 umount "$mount_point" || log "WARNING: Could not unmount '$mount_point'."
+            log "WARNING: Mount point '$mount_point' is still in use. Attempting cleanup..."
+            if timeout 15 umount "$mount_point" 2>/dev/null; then
+                log "DEBUG: Successfully unmounted mount point."
+            else
+                log "WARNING: Trying lazy unmount on mount point..."
+                timeout 10 umount -l "$mount_point" 2>/dev/null || true
+                sleep 2
+            fi
         fi
-        log "DEBUG: Mount point check completed."
+        
+        # Final check - ensure mount point is clean
+        if timeout 5 mountpoint -q "$mount_point" 2>/dev/null; then
+            log "ERROR: Mount point '$mount_point' is still busy after cleanup attempts. Skipping."
+            continue
+        fi
+        
+        log "DEBUG: Mount point check and cleanup completed."
 
         # Detect filesystem type and set appropriate mount options
         log "DEBUG: Starting filesystem type detection for '$device'..."
@@ -203,20 +256,56 @@ mount_external_disks() {
         
         # Try the mount operation with explicit error handling
         mount_success=false
-        if timeout 30 mount -t "$mount_type" -o "$mount_options" "$device" "$mount_point" 2>&1; then
+        mount_output=""
+        
+        # First attempt
+        mount_output=$(timeout 30 mount -t "$mount_type" -o "$mount_options" "$device" "$mount_point" 2>&1)
+        mount_exit_code=$?
+        
+        if [ $mount_exit_code -eq 0 ]; then
             mount_success=true
+            log "DEBUG: Mount operation succeeded on first attempt."
         else
-            mount_exit_code=$?
             log "DEBUG: Mount operation failed with exit code: $mount_exit_code"
+            log "DEBUG: Mount error output: $mount_output"
             
-            # If the first mount attempt failed, try with different options
+            # Handle specific error cases
             if [ "$mount_exit_code" -eq 124 ]; then
                 log "ERROR: Mount operation timed out after 30 seconds."
+            elif [ "$mount_exit_code" -eq 32 ]; then
+                log "WARNING: Mount point busy or device already mounted (exit code 32)."
+                
+                # Additional cleanup for busy mount point
+                log "DEBUG: Performing additional cleanup for busy mount point..."
+                sleep 2
+                
+                # Force cleanup any remaining processes using the mount point
+                if command -v fuser >/dev/null 2>&1; then
+                    log "DEBUG: Checking for processes using mount point..."
+                    timeout 5 fuser -km "$mount_point" 2>/dev/null || true
+                    sleep 1
+                fi
+                
+                # Try to force unmount anything still there
+                timeout 10 umount -f "$mount_point" 2>/dev/null || true
+                timeout 10 umount -l "$mount_point" 2>/dev/null || true
+                sleep 2
+                
+                # Retry the mount after cleanup
+                log "DEBUG: Retrying mount after cleanup..."
+                mount_output=$(timeout 15 mount -t ext4 -o rw,noatime "$device" "$mount_point" 2>&1)
+                if [ $? -eq 0 ]; then
+                    mount_success=true
+                    log "DEBUG: Mount succeeded after cleanup."
+                fi
             elif [ "$fstype" = "ext4" ] && [ "$mount_exit_code" -ne 0 ]; then
                 log "DEBUG: Retrying mount with simpler options for ext4..."
-                if timeout 15 mount -t ext4 -o rw,noatime "$device" "$mount_point" 2>&1; then
+                mount_output=$(timeout 15 mount -t ext4 -o rw,noatime "$device" "$mount_point" 2>&1)
+                if [ $? -eq 0 ]; then
                     mount_success=true
                     log "DEBUG: Retry mount succeeded with simpler options."
+                else
+                    log "DEBUG: Retry mount also failed: $mount_output"
                 fi
             fi
         fi
