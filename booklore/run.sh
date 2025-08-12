@@ -250,244 +250,62 @@ mount_external_disks() {
                 ;;
         esac
         
-        # Attempt to mount the device with timeout
-        log "DEBUG: About to attempt mount operation..."
-        log "DEBUG: Mount command will be: timeout 10 mount -t '$mount_type' -o '$mount_options' '$device' '$mount_point'"
+        # Attempt to mount the device - using simple approach like alexbelgium addons
         log "Mounting '$device' to '$mount_point' with type '$mount_type' and options '$mount_options'..."
-        
-        # Quick device accessibility test only
-        log "DEBUG: Quick device accessibility test..."
-        if timeout 2 blkid "$device" >/dev/null 2>&1; then
-            log "DEBUG: Device '$device' is accessible."
-        else
-            log "WARNING: Device '$device' may not be accessible. Proceeding anyway..."
-        fi
-        
-        log "DEBUG: Using background mount process with forceful termination..."
-        
-        # Function to attempt mount in background
-        attempt_mount_with_kill() {
-            local mount_cmd="$1"
-            local timeout_sec="$2"
-            local attempt_name="$3"
-            
-            log "DEBUG: $attempt_name - Starting background mount with ${timeout_sec}s limit..."
-            
-            # Start mount in background and capture its PID
-            eval "$mount_cmd" >/tmp/mount_output_$$ 2>&1 &
-            local mount_pid=$!
-            
-            # Wait for mount to complete or timeout
-            local elapsed=0
-            while [ $elapsed -lt $timeout_sec ]; do
-                if ! kill -0 $mount_pid 2>/dev/null; then
-                    # Process finished
-                    wait $mount_pid
-                    local exit_code=$?
-                    local output=$(cat /tmp/mount_output_$$ 2>/dev/null)
-                    rm -f /tmp/mount_output_$$
-                    
-                    if [ $exit_code -eq 0 ]; then
-                        log "SUCCESS: $attempt_name completed successfully!"
-                        return 0
-                    else
-                        log "DEBUG: $attempt_name failed with exit code $exit_code"
-                        [ -n "$output" ] && log "DEBUG: Output: $output"
-                        return $exit_code
-                    fi
-                fi
-                sleep 0.5
-                elapsed=$((elapsed + 1))
-            done
-            
-            # Timeout reached - forcefully kill the mount process
-            log "WARNING: $attempt_name timed out after ${timeout_sec} seconds. Killing process..."
-            kill -9 $mount_pid 2>/dev/null
-            
-            # Also try to kill any child processes
-            pkill -9 -P $mount_pid 2>/dev/null
-            
-            # Clean up
-            rm -f /tmp/mount_output_$$
-            
-            # Wait a moment for process to die
-            sleep 0.5
-            
-            return 124  # timeout exit code
-        }
         
         mount_success=false
         
-        # Raspberry Pi 4 + Argon EON NAS specific handling
-        # The Argon EON uses a JMicron JMS561U SATA-to-USB3 bridge which has compatibility issues
+        # Check if we're on RPi4 with potential hanging issues
         local is_rpi4=false
-        local is_argon_eon=false
-        
         if [ -f /proc/cpuinfo ] && grep -q "Raspberry Pi 4" /proc/cpuinfo 2>/dev/null; then
             is_rpi4=true
-            log "INFO: Running on Raspberry Pi 4."
             
-            # Check for Argon EON by looking for JMicron bridge or specific USB IDs
-            if lsusb 2>/dev/null | grep -qE "(JMicron|152d:0561|152d:1561)"; then
-                is_argon_eon=true
-                log "INFO: Argon EON NAS detected - applying specific workarounds."
+            # For RPi4 with large ext4 drives, warn but still try
+            if [ "$fstype" = "ext4" ]; then
+                local device_size=$(lsblk -b -n -o SIZE "$device" 2>/dev/null || echo "0")
+                if [ "$device_size" -gt 1000000000000 ]; then  # > 1TB
+                    log "WARNING: Large ext4 drive on RPi4 detected. This may hang - trying anyway..."
+                    log "INFO: If the addon hangs here, you may need to:"
+                    log "  - Add 'usb-storage.quirks=152d:0561:u' to /boot/cmdline.txt"
+                    log "  - Use a different filesystem (exFAT/NTFS)"
+                fi
             fi
         fi
         
-        # Check if this device is known to be problematic
-        local is_problematic=false
+        # Try simple mount command like alexbelgium addons do
+        # They just use mount directly - if it hangs, it hangs (but warn the user)
+        log "DEBUG: Attempting mount (this may take a moment)..."
         
-        # Argon EON + ext4 is a known problematic combination
-        if [ "$is_argon_eon" = true ] && [ "$fstype" = "ext4" ]; then
-            log "WARNING: Argon EON with ext4 filesystem detected."
-            log "INFO: This combination has known issues with Home Assistant OS."
-            is_problematic=true
-        elif [ "$is_rpi4" = true ] && [ "$fstype" = "ext4" ]; then
-            # Check device size if possible
-            local device_size=$(lsblk -b -n -o SIZE "$device" 2>/dev/null || echo "0")
-            if [ "$device_size" -gt 1000000000000 ]; then  # > 1TB
-                log "WARNING: Large ext4 drive detected on Raspberry Pi 4."
-                is_problematic=true
-            fi
-        fi
-        
-        # Specific device check
-        if [ "$device" = "/dev/sdc1" ] && [ "$fstype" = "ext4" ]; then
-            is_problematic=true
-        fi
-        
-        if [ "$is_problematic" = true ]; then
-            if [ "$is_argon_eon" = true ]; then
-                log "WARNING: Argon EON NAS with ext4 requires special handling."
-                log "INFO: Attempting Argon EON specific workarounds..."
-            else
-                log "WARNING: This device configuration may cause issues on your hardware."
-                log "INFO: Attempting Raspberry Pi 4 specific workarounds..."
-            fi
-            
-            # Argon EON specific workarounds
-            if [ "$is_argon_eon" = true ]; then
-                # The JMicron bridge in Argon EON doesn't handle certain mount options well
-                # Use very basic mount options and ultra-short timeout
-                
-                # Workaround 1: Absolute minimal mount
-                log "DEBUG: Attempting minimal mount for Argon EON (0.5s timeout)..."
-                if attempt_mount_with_kill "mount -o defaults '$device' '$mount_point'" 0.5 "Argon EON minimal"; then
-                    mount_success=true
-                    log "SUCCESS: Minimal mount succeeded on Argon EON!"
-                else
-                    # Workaround 2: Try with nobarrier option which helps with SATA bridges
-                    log "DEBUG: Attempting mount with nobarrier option..."
-                    if attempt_mount_with_kill "mount -o nobarrier,noatime '$device' '$mount_point'" 0.5 "Argon EON nobarrier"; then
-                        mount_success=true
-                        log "SUCCESS: Mount succeeded with nobarrier option!"
-                    else
-                        # Workaround 3: Read-only mount first
-                        log "DEBUG: Attempting read-only mount for Argon EON..."
-                        if attempt_mount_with_kill "mount -o ro '$device' '$mount_point'" 0.5 "Argon EON read-only"; then
-                            mount_success=true
-                            log "WARNING: Mounted read-only. The Argon EON bridge may need firmware update."
-                        fi
-                    fi
-                fi
-            else
-                # Standard RPi4 workarounds (non-Argon EON)
-                log "DEBUG: Attempting mount with sync option to avoid USB buffer issues..."
-                if attempt_mount_with_kill "mount -o sync,noatime '$device' '$mount_point'" 1 "Sync mount"; then
-                    mount_success=true
-                    log "SUCCESS: Sync mount succeeded (may be slower but stable)!"
-                else
-                    # Try with minimal caching
-                    log "DEBUG: Attempting mount with minimal caching..."
-                    if attempt_mount_with_kill "mount -o ro,noatime,nodiratime,nobarrier '$device' '$mount_point'" 1 "Minimal cache mount"; then
-                        if mount -o remount,rw,sync "$mount_point" 2>/dev/null; then
-                            mount_success=true
-                            log "SUCCESS: Mount succeeded with RPi4 workarounds!"
-                        else
-                            mount_success=true
-                            log "WARNING: Mounted read-only due to RPi4 USB limitations."
-                        fi
-                    fi
-                fi
-            fi
-            
-            # Workaround 3: Try FUSE-based mount as last resort
-            if [ "$mount_success" = false ] && [ "$fstype" = "ext4" ]; then
-                log "DEBUG: Attempting FUSE-based mount (if available)..."
-                if command -v fuseext2 >/dev/null 2>&1; then
-                    if attempt_mount_with_kill "fuseext2 -o ro '$device' '$mount_point'" 1 "FUSE mount"; then
-                        mount_success=true
-                        log "WARNING: Using FUSE mount (slower but works around kernel issues)."
-                    fi
-                fi
-            fi
-            
-            if [ "$mount_success" = false ]; then
-                if [ "$is_argon_eon" = true ]; then
-                    log "ERROR: Unable to mount $device on Argon EON NAS."
-                    log "INFO: This is a known issue with the Argon EON's JMicron SATA bridge."
-                    log "TIP: Try these solutions:"
-                    log "  1. Update Argon EON firmware if available"
-                    log "  2. Add 'usb-storage.quirks=152d:0561:u' to /boot/cmdline.txt"
-                    log "  3. Use a different filesystem (btrfs or xfs may work better)"
-                    log "  4. Mount the drive manually after boot with: mount -o nobarrier /dev/sdc1 /mnt"
-                    log "  5. Consider using the drive for data storage only, not for addon data"
-                else
-                    log "ERROR: Unable to mount $device on Raspberry Pi 4."
-                    log "INFO: This is a known issue with RPi4 USB3 ports and large drives."
-                    log "TIP: Try these solutions:"
-                    log "  1. Connect the drive to a USB2 port instead of USB3"
-                    log "  2. Use a powered USB hub"
-                    log "  3. Add 'usb-storage.quirks=XXXX:YYYY:u' to /boot/cmdline.txt"
-                    log "  4. Format the drive with a different filesystem (exFAT/NTFS)"
-                fi
-                log "CRITICAL: Skipping this device to prevent system hang."
-                rmdir "$mount_point" 2>/dev/null || true
-                continue
-            fi
+        if mount -t "$mount_type" -o "$mount_options" "$device" "$mount_point"; then
+            mount_success=true
+            log "SUCCESS: Device '$device' mounted to '$mount_point'."
         else
-            # Normal mount attempts for other devices
+            # If that fails, try with simpler options
+            log "DEBUG: First mount attempt failed, trying with simpler options..."
             
-            # On RPi4, use shorter timeouts due to USB instability
-            local timeout1=3
-            local timeout2=2
-            if [ "$is_rpi4" = true ]; then
-                timeout1=2
-                timeout2=1
-                log "DEBUG: Using reduced timeouts for Raspberry Pi 4."
-            fi
-            
-            # Attempt 1: Simple mount
-            if attempt_mount_with_kill "mount '$device' '$mount_point'" $timeout1 "Simple mount"; then
+            # Try without specifying type (let mount auto-detect)
+            if mount -o "$mount_options" "$device" "$mount_point"; then
                 mount_success=true
-            elif [ $? -eq 124 ]; then
-                # Attempt 2: Read-only mount
-                if attempt_mount_with_kill "mount -o ro '$device' '$mount_point'" $timeout2 "Read-only mount"; then
-                    # Try to remount as read-write
-                    if mount -o remount,rw "$mount_point" 2>/dev/null; then
+                log "SUCCESS: Device '$device' mounted to '$mount_point' (auto-detected type)."
+            else
+                # Try with minimal options
+                log "DEBUG: Second attempt failed, trying with minimal options..."
+                if mount "$device" "$mount_point"; then
+                    mount_success=true
+                    log "SUCCESS: Device '$device' mounted to '$mount_point' (minimal options)."
+                else
+                    # Last attempt - try with defaults option
+                    log "DEBUG: Third attempt failed, trying with defaults..."
+                    if mount -o defaults "$device" "$mount_point"; then
                         mount_success=true
-                        log "SUCCESS: Remounted as read-write!"
+                        log "SUCCESS: Device '$device' mounted to '$mount_point' (defaults)."
                     else
-                        mount_success=true
-                        log "WARNING: Mounted as read-only."
-                    fi
-                elif [ $? -eq 124 ]; then
-                    # Attempt 3: Explicit filesystem type
-                    if [ -n "$fstype" ] && [ "$fstype" != "unknown" ]; then
-                        if attempt_mount_with_kill "mount -t '$fstype' '$device' '$mount_point'" $timeout2 "Mount with $fstype"; then
-                            mount_success=true
-                        elif [ $? -eq 124 ]; then
-                            log "ERROR: All mount attempts timed out."
-                            log "CRITICAL: Device '$device' appears to cause hanging. Skipping."
-                            rmdir "$mount_point" 2>/dev/null || true
-                            continue
-                        fi
+                        log "WARNING: All mount attempts failed for '$device'."
                     fi
                 fi
             fi
         fi
         
-        # No additional error handling needed - all handled in attempt_mount_with_kill
         
         if [ "$mount_success" = true ]; then
             log "DEBUG: Mount operation completed successfully."
