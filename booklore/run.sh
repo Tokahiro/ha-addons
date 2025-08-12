@@ -147,7 +147,7 @@ mount_external_disks() {
         
         # Get supported filesystems
         log "DEBUG: Getting supported filesystems..."
-        fstypessupport=$(timeout 5 sh -c "grep -v nodev < /proc/filesystems | awk '{$1=\" \"\$1}1' | tr -d '\n\t'" 2>/dev/null || echo "ext2 ext3 ext4 vfat ntfs")
+        fstypessupport=$(timeout 5 grep -v nodev /proc/filesystems 2>/dev/null | awk '{print $2}' | tr '\n' ' ' | sed 's/ $//' || echo "ext2 ext3 ext4 vfat ntfs")
         log "DEBUG: Supported filesystems retrieved."
         
         # Set filesystem-specific options
