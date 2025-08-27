@@ -1,4 +1,4 @@
-ARG BOOKLORE_TAG=latest
+ARG BOOKLORE_TAG=0.38.0
 FROM ghcr.io/booklore-app/booklore:${BOOKLORE_TAG}
 
 # Small tools + nginx + mount utilities

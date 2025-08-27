@@ -114,7 +114,7 @@ options:
   db_port: 3306
   db_name: "booklore"
   db_user: "booklore"
-  db_password: "CHANGE_ME"
+  db_password: ""
   mounts: []  # List of device paths or labels to mount
 schema:
   db_host: str
