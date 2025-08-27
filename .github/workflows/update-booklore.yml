@@ -50,9 +50,9 @@ jobs:
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: chore(booklore): bump to ${{ steps.update.outputs.tag_with_v }}
-          branch: chore/bump-booklore-${{ steps.update.outputs.tag_with_v }}
-          title: chore(booklore): bump to ${{ steps.update.outputs.tag_with_v }}
+          commit-message: "chore(booklore): bump to ${{ steps.update.outputs.tag_with_v }}"
+          branch: "chore/bump-booklore-${{ steps.update.outputs.tag_with_v }}"
+          title: "chore(booklore): bump to ${{ steps.update.outputs.tag_with_v }}"
           body: |
             Automated version bump to ${{ steps.update.outputs.tag_with_v }}.
 
