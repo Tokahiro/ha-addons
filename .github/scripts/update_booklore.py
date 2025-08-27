@@ -95,7 +95,7 @@ def update_files(root: Path, tag_with_v: str, tag_no_v: str):
     if replace_in_file(
         config_path,
         r'(?m)^(\s*version:\s*["\']?)(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.\-]+)?)(["\']?)',
-        r"\1" + tag_no_v + r"\3",
+        r"\g<1>" + tag_no_v + r"\g<3>",
     ):
         changed.append(str(config_path.relative_to(root)))
 
@@ -104,7 +104,7 @@ def update_files(root: Path, tag_with_v: str, tag_no_v: str):
     if replace_in_file(
         docs_path,
         r"(Version\s+)(v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.\-]+)?)\b",
-        r"\1" + tag_no_v,
+        r"\g<1>" + tag_no_v,
     ):
         changed.append(str(docs_path.relative_to(root)))
 
@@ -115,10 +115,10 @@ def update_files(root: Path, tag_with_v: str, tag_no_v: str):
         txt = readme_path.read_text(encoding="utf-8")
         new = re.sub(
             r"(Version\s+)(v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.\-]+)?)\b",
-            r"\1" + tag_no_v,
+            r"\g<1>" + tag_no_v,
             txt,
         )
-        new2 = re.sub(r"(badge/version-)(\d+\.\d+\.\d+)(-)", r"\1" + tag_no_v + r"\3", new)
+        new2 = re.sub(r"(badge/version-)(\d+\.\d+\.\d+)(-)", r"\g<1>" + tag_no_v + r"\g<3>", new)
         if new2 != txt:
             readme_path.write_text(new2, encoding="utf-8", newline="\n")
             changed_any = True
@@ -130,7 +130,7 @@ def update_files(root: Path, tag_with_v: str, tag_no_v: str):
     if replace_in_file(
         dockerfile_path,
         r'(?m)^(ARG\s+BOOKLORE_TAG\s*=\s*)(v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\s*$',
-        r'\1' + tag_with_v,
+        r"\g<1>" + tag_with_v,
     ):
         changed.append(str(dockerfile_path.relative_to(root)))
 

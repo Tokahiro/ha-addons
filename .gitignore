@@ -1,1 +1,5 @@
 .DS_Store
+AGENTS.md
+.roo/rules-ask/AGENTS.md
+.roo/rules-code/AGENTS.md
+.roo/rules-debug/AGENTS.md
