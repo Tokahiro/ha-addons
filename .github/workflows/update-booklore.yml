@@ -1,0 +1,133 @@
+name: Update Booklore Version
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [upstream_release]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-booklore-version
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Update versions
+        id: update
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python .github/scripts/update_booklore.py --repo booklore-app/booklore
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Pull Request
+        id: cpr
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(booklore): bump to ${{ steps.update.outputs.tag_with_v }}"
+          branch: "chore/bump-booklore-${{ steps.update.outputs.tag_with_v }}"
+          title: "chore(booklore): bump to ${{ steps.update.outputs.tag_with_v }}"
+          body: |
+            Automated version bump to ${{ steps.update.outputs.tag_with_v }}.
+ 
+            Upstream release: https://github.com/booklore-app/booklore/releases/tag/${{ steps.update.outputs.tag_with_v }}
+            Compare: https://github.com/booklore-app/booklore/compare/${{ steps.update.outputs.previous_tag }}...${{ steps.update.outputs.tag_with_v }}
+ 
+            Changed files:
+            ${{ steps.update.outputs.changed_files }}
+          labels: |
+            dependencies
+            booklore
+            automated
+
+      - name: Merge created PR via rebase
+        if: ${{ steps.cpr.outputs.pull-request-number != '' && steps.cpr.outputs.pull-request-operation == 'created' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = parseInt('${{ steps.cpr.outputs.pull-request-number }}', 10);
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            let res;
+            if (isNaN(prNumber)) {
+              core.info(`No pull request number to merge (value: '${{ steps.cpr.outputs.pull-request-number }}')`);
+            } else {
+              try {
+                core.info(`Attempting to merge PR #${prNumber} via rebase...`);
+                res = await github.rest.pulls.merge({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  merge_method: 'rebase'
+                });
+                core.info(`Merge response: ${JSON.stringify(res.data)}`);
+              } catch (err) {
+                core.error(`Merge failed: ${err.message}`);
+                if (err.status) core.info(`HTTP status: ${err.status}`);
+                core.info('Merge could be blocked by branch protection or required reviews. Continuing without failing the workflow.');
+              }
+
+              // If merge succeeded, attempt to delete the source branch when it belongs to this repo
+              if (res && res.data && res.data.merged === true) {
+                try {
+                  core.info(`Merge succeeded for PR #${prNumber}; fetching PR details to determine head branch...`);
+                  const pr = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
+                  const headRef = pr.data.head && pr.data.head.ref ? pr.data.head.ref : null;
+                  const headRepoFull = pr.data.head && pr.data.head.repo && pr.data.head.repo.full_name ? pr.data.head.repo.full_name.toLowerCase() : null;
+                  core.info(`PR head ref: ${headRef}; head repo: ${pr.data.head && pr.data.head.repo ? pr.data.head.repo.full_name : 'unknown'}`);
+
+                  if (headRef && headRepoFull) {
+                    if (headRepoFull === `${owner}/${repo}`.toLowerCase()) {
+                      try {
+                        core.info(`Deleting branch heads/${headRef} from repository ${owner}/${repo}...`);
+                        await github.rest.git.deleteRef({ owner, repo, ref: `heads/${headRef}` });
+                        core.info(`Deleted branch heads/${headRef}`);
+                      } catch (delErr) {
+                        core.error(`Failed to delete branch heads/${headRef}: ${delErr.message}`);
+                        if (delErr.status) core.info(`HTTP status: ${delErr.status}`);
+                        core.info('Continuing despite branch deletion failure.');
+                      }
+                    } else {
+                      core.info(`PR head is on a fork (${pr.data.head.repo.full_name}); skipping branch deletion`);
+                    }
+                  } else {
+                    core.info('Unable to determine PR head ref or repo; skipping branch deletion');
+                  }
+                } catch (getErr) {
+                  core.error(`Failed to fetch PR details for #${prNumber}: ${getErr.message}`);
+                  if (getErr.status) core.info(`HTTP status: ${getErr.status}`);
+                  core.info('Skipping branch deletion due to error fetching PR details.');
+                }
+              } else {
+                core.info(`PR #${prNumber} was not merged by this action (res.data.merged !== true). Skipping branch deletion.`);
+              }
+            }
+        continue-on-error: true
