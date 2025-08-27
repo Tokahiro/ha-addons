@@ -32,7 +32,7 @@ jobs:
       - name: Update versions
         id: update
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
           python .github/scripts/update_booklore.py --repo booklore-app/booklore
 
@@ -49,16 +49,16 @@ jobs:
         if: steps.diff.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
           commit-message: "chore(booklore): bump to ${{ steps.update.outputs.tag_with_v }}"
           branch: "chore/bump-booklore-${{ steps.update.outputs.tag_with_v }}"
           title: "chore(booklore): bump to ${{ steps.update.outputs.tag_with_v }}"
           body: |
             Automated version bump to ${{ steps.update.outputs.tag_with_v }}.
-
+ 
             Upstream release: https://github.com/booklore-app/booklore/releases/tag/${{ steps.update.outputs.tag_with_v }}
             Compare: https://github.com/booklore-app/booklore/compare/${{ steps.update.outputs.previous_tag }}...${{ steps.update.outputs.tag_with_v }}
-
+ 
             Changed files:
             ${{ steps.update.outputs.changed_files }}
           labels: |
