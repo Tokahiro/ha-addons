@@ -46,6 +46,7 @@ jobs:
           fi
 
       - name: Create Pull Request
+        id: cpr
         if: steps.diff.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
@@ -65,3 +66,32 @@ jobs:
             dependencies
             booklore
             automated
+
+      - name: Merge created PR via rebase
+        if: ${{ steps.cpr.outputs.pull-request-number != '' && steps.cpr.outputs.pull-request-operation == 'created' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = parseInt('${{ steps.cpr.outputs.pull-request-number }}', 10);
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            if (isNaN(prNumber)) {
+              core.info(`No pull request number to merge (value: '${{ steps.cpr.outputs.pull-request-number }}')`);
+            } else {
+              try {
+                core.info(`Attempting to merge PR #${prNumber} via rebase...`);
+                const res = await github.pulls.merge({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  merge_method: 'rebase'
+                });
+                core.info(`Merge response: ${JSON.stringify(res.data)}`);
+              } catch (err) {
+                core.error(`Merge failed: ${err.message}`);
+                if (err.status) core.info(`HTTP status: ${err.status}`);
+                core.info('Merge could be blocked by branch protection or required reviews. Continuing without failing the workflow.');
+              }
+            }
+        continue-on-error: true
