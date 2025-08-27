@@ -81,7 +81,7 @@ jobs:
             } else {
               try {
                 core.info(`Attempting to merge PR #${prNumber} via rebase...`);
-                const res = await github.pulls.merge({
+                const res = await github.rest.pulls.merge({
                   owner,
                   repo,
                   pull_number: prNumber,
