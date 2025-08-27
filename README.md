@@ -138,3 +138,54 @@ Licensed under the **MIT License** - see individual add-on directories for detai
 *Made with ❤️ for the Home Assistant community by [Tokahiro](https://github.com/Tokahiro)*
 
 </div>
+
+---
+## Automated Booklore add-on version bumps
+
+This repository automatically updates the Booklore Home Assistant add-on whenever a new upstream release is published at https://github.com/booklore-app/booklore/releases and opens a pull request with the changes.
+
+Workflow
+- Action file: [.github/workflows/update-booklore.yml](.github/workflows/update-booklore.yml)
+- Updater script: [.github/scripts/update_booklore.py](.github/scripts/update_booklore.py)
+- Triggers:
+  - Scheduled daily at 06:00 UTC
+  - Manual: Actions → “Update Booklore Version” → Run workflow
+  - Optional: repository_dispatch with type: upstream_release
+- Permissions: contents: write; pull-requests: write
+- Concurrency: only one run at a time; overlapping runs are canceled
+
+What gets updated
+- [booklore/build.yaml](booklore/build.yaml): BOOKLORE_REF → set to the latest upstream tag (e.g., "vX.Y.Z")
+- [booklore/config.yaml](booklore/config.yaml): version → set to "X.Y.Z" (no leading v)
+- [booklore/DOCS.md](booklore/DOCS.md): human text occurrences of “Version X.Y.Z”
+- [booklore/README.md](booklore/README.md): human text “Version X.Y.Z” and the shields.io badge “version-X.Y.Z-”
+
+Intentionally not changed
+- [booklore/Dockerfile](booklore/Dockerfile): ARG BASHIO_VERSION (tooling dependency)
+- [booklore/config.yaml](booklore/config.yaml): homeassistant minimum version
+
+Pull request details
+- Branch: chore/bump-booklore-vX.Y.Z
+- Commit message and title: chore(booklore): bump to vX.Y.Z
+- Labels: dependencies, booklore, automated
+- PR body includes links to the upstream release and compare, and a list of changed files
+
+How it works
+- The script fetches the latest non-prerelease upstream tag via the GitHub API (/releases/latest)
+- Current versions are read from:
+  - [booklore/build.yaml](booklore/build.yaml) → BOOKLORE_REF (primary)
+  - [booklore/config.yaml](booklore/config.yaml) → version (fallback)
+- If already on the latest version: no changes and no PR
+- If updates are needed: targeted regex rewrites are applied only to the files listed above
+
+Manual and local runs
+- In the GitHub UI: use the “Run workflow” button on the “Update Booklore Version” workflow
+- Locally (optional), with a GitHub token for higher API rate limits:
+  - export GH_TOKEN=&lt;your_token&gt;
+  - python .github/scripts/update_booklore.py --repo booklore-app/booklore
+
+Edge cases
+- Prereleases/drafts are ignored (only stable releases are considered)
+- Formatting (quotes, line structure) is preserved where possible
+- Network or API errors will cause the job to fail and report logs in the Actions run
+- Adding new targets in the future: adjust [.github/scripts/update_booklore.py](.github/scripts/update_booklore.py) with an additional file-specific rewrite rule

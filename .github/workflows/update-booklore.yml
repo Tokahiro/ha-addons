@@ -1,0 +1,67 @@
+name: Update Booklore Version
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [upstream_release]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-booklore-version
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Update versions
+        id: update
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python .github/scripts/update_booklore.py --repo booklore-app/booklore
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Pull Request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: chore(booklore): bump to ${{ steps.update.outputs.tag_with_v }}
+          branch: chore/bump-booklore-${{ steps.update.outputs.tag_with_v }}
+          title: chore(booklore): bump to ${{ steps.update.outputs.tag_with_v }}
+          body: |
+            Automated version bump to ${{ steps.update.outputs.tag_with_v }}.
+
+            Upstream release: https://github.com/booklore-app/booklore/releases/tag/${{ steps.update.outputs.tag_with_v }}
+            Compare: https://github.com/booklore-app/booklore/compare/${{ steps.update.outputs.previous_tag }}...${{ steps.update.outputs.tag_with_v }}
+
+            Changed files:
+            ${{ steps.update.outputs.changed_files }}
+          labels: |
+            dependencies
+            booklore
+            automated
