@@ -28,6 +28,8 @@ map:
     read_only: false
   - type: share
     read_only: false
+  - media: rw
+  - share: rw
 
 # Use the Services API for MariaDB auto-discovery
 services:
@@ -116,6 +118,8 @@ options:
   db_user: "booklore"
   db_password: ""
   mounts: []  # List of device paths or labels to mount
+  books_dir: "/media/booklore/books"
+  bookdrop_dir: "/share/booklore/bookdrop"
 schema:
   db_host: str
   db_port: int
@@ -124,3 +128,5 @@ schema:
   db_password: password
   mounts:
     - "str?"
+  books_dir: str
+  bookdrop_dir: str

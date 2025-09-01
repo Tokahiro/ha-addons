@@ -243,6 +243,53 @@ cleanup_mounts() {
 # Set up trap for cleanup on exit
 trap cleanup_mounts EXIT
 
+# ---- Persistent data and user-configurable paths ----
+# Ensure /data exists (Supervisor persists this path)
+mkdir -p /data
+
+# Read user options for books_dir and bookdrop_dir with safe fallbacks
+if [ "${HAS_BASHIO:-0}" -eq 1 ]; then
+  BOOKS_DIR="$(bashio::config 'books_dir' 2>/dev/null || true)"
+  BOOKDROP_DIR="$(bashio::config 'bookdrop_dir' 2>/dev/null || true)"
+else
+  BOOKS_DIR="$(jq -r '.books_dir // empty' /data/options.json 2>/dev/null || true)"
+  BOOKDROP_DIR="$(jq -r '.bookdrop_dir // empty' /data/options.json 2>/dev/null || true)"
+fi
+
+# Apply defaults if empty
+[ -z "${BOOKS_DIR:-}" ] && BOOKS_DIR="/media/booklore/books"
+[ -z "${BOOKDROP_DIR:-}" ] && BOOKDROP_DIR="/share/booklore/bookdrop"
+
+log "Using BOOKS_DIR=${BOOKS_DIR}"
+log "Using BOOKDROP_DIR=${BOOKDROP_DIR}"
+
+# Ensure the configured directories exist (Supervisor maps persist these)
+mkdir -p "$BOOKS_DIR" "$BOOKDROP_DIR"
+
+# Symlink /app/data -> /data (idempotent; remove non-symlink if present)
+if [ -e /app/data ] && [ ! -L /app/data ]; then
+  log "Removing existing non-symlink /app/data"
+  rm -rf /app/data
+fi
+ln -sfn /data /app/data
+log "Linked /app/data -> /data"
+
+# Symlink /books -> $BOOKS_DIR (idempotent)
+if [ -e /books ] && [ ! -L /books ]; then
+  log "Removing existing non-symlink /books"
+  rm -rf /books
+fi
+ln -sfn "$BOOKS_DIR" /books
+log "Linked /books -> $BOOKS_DIR"
+
+# Symlink /bookdrop -> $BOOKDROP_DIR (idempotent)
+if [ -e /bookdrop ] && [ ! -L /bookdrop ]; then
+  log "Removing existing non-symlink /bookdrop"
+  rm -rf /bookdrop
+fi
+ln -sfn "$BOOKDROP_DIR" /bookdrop
+log "Linked /bookdrop -> $BOOKDROP_DIR"
+
 # Mount external disks
 mount_external_disks
 
