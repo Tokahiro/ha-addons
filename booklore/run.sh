@@ -243,6 +243,9 @@ cleanup_mounts() {
 # Set up trap for cleanup on exit
 trap cleanup_mounts EXIT
 
+# Mount external disks
+mount_external_disks
+
 # ---- Persistent data and user-configurable paths ----
 # Ensure /data exists (Supervisor persists this path)
 mkdir -p /data
@@ -289,9 +292,6 @@ if [ -e /bookdrop ] && [ ! -L /bookdrop ]; then
 fi
 ln -sfn "$BOOKDROP_DIR" /bookdrop
 log "Linked /bookdrop -> $BOOKDROP_DIR"
-
-# Mount external disks
-mount_external_disks
 
 DB_NAME="$(get_opt 'db_name' 'booklore')"
 
