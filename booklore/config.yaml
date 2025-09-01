@@ -120,6 +120,7 @@ options:
   mounts: []  # List of device paths or labels to mount
   books_dir: "/media/booklore/books"
   bookdrop_dir: "/share/booklore/bookdrop"
+  data_dir: "/data/booklore"
 schema:
   db_host: str
   db_port: int
@@ -130,3 +131,4 @@ schema:
     - "str?"
   books_dir: str
   bookdrop_dir: str
+  data_dir: str

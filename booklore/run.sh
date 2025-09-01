@@ -254,28 +254,32 @@ mkdir -p /data
 if [ "${HAS_BASHIO:-0}" -eq 1 ]; then
   BOOKS_DIR="$(bashio::config 'books_dir' 2>/dev/null || true)"
   BOOKDROP_DIR="$(bashio::config 'bookdrop_dir' 2>/dev/null || true)"
+  DATA_DIR="$(bashio::config 'data_dir' 2>/dev/null || true)"
 else
   BOOKS_DIR="$(jq -r '.books_dir // empty' /data/options.json 2>/dev/null || true)"
   BOOKDROP_DIR="$(jq -r '.bookdrop_dir // empty' /data/options.json 2>/dev/null || true)"
+  DATA_DIR="$(jq -r '.data_dir // empty' /data/options.json 2>/dev/null || true)"
 fi
 
 # Apply defaults if empty
 [ -z "${BOOKS_DIR:-}" ] && BOOKS_DIR="/media/booklore/books"
 [ -z "${BOOKDROP_DIR:-}" ] && BOOKDROP_DIR="/share/booklore/bookdrop"
+[ -z "${DATA_DIR:-}" ] && DATA_DIR="/data
 
 log "Using BOOKS_DIR=${BOOKS_DIR}"
 log "Using BOOKDROP_DIR=${BOOKDROP_DIR}"
+log "Using DATA_DIR=${DATA_DIR}"
 
 # Ensure the configured directories exist (Supervisor maps persist these)
-mkdir -p "$BOOKS_DIR" "$BOOKDROP_DIR"
+mkdir -p "$BOOKS_DIR" "$BOOKDROP_DIR" "$DATA_DIR"
 
 # Symlink /app/data -> /data (idempotent; remove non-symlink if present)
 if [ -e /app/data ] && [ ! -L /app/data ]; then
   log "Removing existing non-symlink /app/data"
   rm -rf /app/data
 fi
-ln -sfn /data /app/data
-log "Linked /app/data -> /data"
+ln -sfn "$DATA_DIR" /app/data
+log "Linked /app/data -> $DATA_DIR"
 
 # Symlink /books -> $BOOKS_DIR (idempotent)
 if [ -e /books ] && [ ! -L /books ]; then
