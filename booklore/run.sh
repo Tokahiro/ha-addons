@@ -264,7 +264,7 @@ fi
 # Apply defaults if empty
 [ -z "${BOOKS_DIR:-}" ] && BOOKS_DIR="/media/booklore/books"
 [ -z "${BOOKDROP_DIR:-}" ] && BOOKDROP_DIR="/share/booklore/bookdrop"
-[ -z "${DATA_DIR:-}" ] && DATA_DIR="/data
+[ -z "${DATA_DIR:-}" ] && DATA_DIR="/data"
 
 log "Using BOOKS_DIR=${BOOKS_DIR}"
 log "Using BOOKDROP_DIR=${BOOKDROP_DIR}"
