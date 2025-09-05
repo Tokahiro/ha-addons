@@ -1,6 +1,6 @@
 name: "BookLore"
 slug: "booklore"
-version: "1.1.2.1"                 # add-on version (not the BookLore image tag)
+version: "1.2.0.1"                 # add-on version (not the BookLore image tag)
 description: "Self-hosted book & comic library with metadata, OPDS, multi-user and built-in reader."
 url: "https://github.com/Tokahiro/ha-addons/tree/main/booklore"
 arch:
