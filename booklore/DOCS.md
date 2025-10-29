@@ -1,6 +1,6 @@
 # BookLore Add-on Documentation
 
-> 📚 **Version 1.9.0** - Your personal digital library in Home Assistant
+> 📚 **Version 1.10.0** - Your personal digital library in Home Assistant
 
 ## 🚀 Quick Start
 
