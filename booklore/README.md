@@ -1,8 +1,8 @@
 # BookLore - Home Assistant Add-on
 
-> 📚 **Version 1.16.2** - Your personal digital library
+> 📚 **Version 1.16.3** - Your personal digital library
 
-![Version](https://img.shields.io/badge/version-1.16.2-blue.svg)
+![Version](https://img.shields.io/badge/version-1.16.3-blue.svg)
 ![Arch](https://img.shields.io/badge/arch-aarch64%20%7C%20amd64%20%7C%20armv7-green.svg)
 ![Status](https://img.shields.io/badge/status-stable-green.svg)
 
