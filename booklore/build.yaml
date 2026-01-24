@@ -5,4 +5,4 @@ build_from:
 
 args:
   # Pin the upstream BookLore version to build (latest as of 2025-07-28)
-BOOKLORE_REF: "v1.18.3"
+BOOKLORE_REF: "v1.18.4"
