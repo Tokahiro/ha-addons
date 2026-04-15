@@ -1,4 +1,4 @@
-ARG BOOKLORE_TAG=v2.2.1
+ARG BOOKLORE_TAG=v2.2.2
 FROM ghcr.io/booklore-app/booklore:${BOOKLORE_TAG}
 
 # Small tools + nginx + mount utilities
