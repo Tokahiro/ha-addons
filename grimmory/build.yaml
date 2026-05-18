@@ -4,5 +4,5 @@ build_from:
   armv7:   "ghcr.io/home-assistant/armv7-base:3.19"
 
 args:
-  # Pin the upstream BookLore version to build (latest as of 2025-07-28)
-BOOKLORE_REF: "v2.3.0"
+  # Pin the upstream Grimmory version to build
+  GRIMMORY_REF: "v3.1.0"

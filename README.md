@@ -36,10 +36,10 @@ Ready to enhance your Home Assistant? Add this repository in one click:
 
 ## 📚 Available Add-ons
 
-### 📖 BookLore
+### 📖 Grimmory
 *Your personal digital library*
 
-Transform your Home Assistant into a powerful book server with automatic organization, beautiful covers, and mobile access.
+Transform your Home Assistant into a powerful book server with automatic organization, beautiful covers, and mobile access. Grimmory is the active community fork of the discontinued Booklore project.
 
 **✨ What makes it special:**
 - 📚 **Smart Library** - Auto-organizes books with covers and metadata

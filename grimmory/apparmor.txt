@@ -1,6 +1,6 @@
 #include <tunables/global>
 
-profile booklore_addon flags=(attach_disconnected,mediate_deleted) {
+profile grimmory_addon flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
 
   # Core capabilities needed for mounting

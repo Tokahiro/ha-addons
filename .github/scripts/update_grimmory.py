@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]  # .github/scripts -> .github -> repo
 def http_get_json(url, token=None):
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "booklore-version-updater",
+        "User-Agent": "grimmory-version-updater",
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -35,20 +35,20 @@ def fetch_latest_tag(repo, token):
 
 def read_current_versions(root: Path):
     current = {
-        "build_booklore_ref": None,
+        "build_grimmory_ref": None,
         "config_version": None,
     }
-    build_path = root / "booklore" / "build.yaml"
+    build_path = root / "grimmory" / "build.yaml"
     if build_path.exists():
         txt = build_path.read_text(encoding="utf-8")
         m = re.search(
-            r'(?m)^\s*BOOKLORE_REF:\s*["\']?(v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.\-]+)?)["\']?\s*$',
+            r'(?m)^\s*GRIMMORY_REF:\s*["\']?(v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.\-]+)?)["\']?\s*$',
             txt,
         )
         if m:
-            current["build_booklore_ref"] = m.group(1)
+            current["build_grimmory_ref"] = m.group(1)
 
-    config_path = root / "booklore" / "config.yaml"
+    config_path = root / "grimmory" / "config.yaml"
     if config_path.exists():
         txt = config_path.read_text(encoding="utf-8")
         m = re.search(
@@ -59,8 +59,8 @@ def read_current_versions(root: Path):
             current["config_version"] = m.group(1)
 
     previous_tag = None
-    if current["build_booklore_ref"]:
-        prev = current["build_booklore_ref"]
+    if current["build_grimmory_ref"]:
+        prev = current["build_grimmory_ref"]
         previous_tag = prev if prev.lower().startswith("v") else f"v{prev}"
     elif current["config_version"]:
         previous_tag = f'v{current["config_version"]}'
@@ -81,17 +81,17 @@ def replace_in_file(path: Path, pattern: str, repl: str) -> bool:
 def update_files(root: Path, tag_with_v: str, tag_no_v: str):
     changed = []
 
-    # booklore/build.yaml
-    build_path = root / "booklore" / "build.yaml"
+    # grimmory/build.yaml
+    build_path = root / "grimmory" / "build.yaml"
     if replace_in_file(
         build_path,
-        r'(?m)^\s*BOOKLORE_REF:\s*["\']?v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.\-]+)?["\']?\s*$',
-        f'BOOKLORE_REF: "{tag_with_v}"',
+        r'(?m)^\s*GRIMMORY_REF:\s*["\']?v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.\-]+)?["\']?\s*$',
+        f'  GRIMMORY_REF: "{tag_with_v}"',
     ):
         changed.append(str(build_path.relative_to(root)))
 
-    # booklore/config.yaml (version: "X.Y.Z"); do not alter 'homeassistant' key
-    config_path = root / "booklore" / "config.yaml"
+    # grimmory/config.yaml (version: "X.Y.Z"); do not alter 'homeassistant' key
+    config_path = root / "grimmory" / "config.yaml"
     if replace_in_file(
         config_path,
         r'(?m)^(\s*version:\s*["\']?)(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.\-]+)?)(["\']?)',
@@ -99,8 +99,8 @@ def update_files(root: Path, tag_with_v: str, tag_no_v: str):
     ):
         changed.append(str(config_path.relative_to(root)))
 
-    # booklore/DOCS.md
-    docs_path = root / "booklore" / "DOCS.md"
+    # grimmory/DOCS.md
+    docs_path = root / "grimmory" / "DOCS.md"
     if replace_in_file(
         docs_path,
         r"(Version\s+)(v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.\-]+)?)\b",
@@ -108,8 +108,8 @@ def update_files(root: Path, tag_with_v: str, tag_no_v: str):
     ):
         changed.append(str(docs_path.relative_to(root)))
 
-    # booklore/README.md: textual "Version X.Y.Z" and badge "badge/version-X.Y.Z-"
-    readme_path = root / "booklore" / "README.md"
+    # grimmory/README.md: textual "Version X.Y.Z" and badge "badge/version-X.Y.Z-"
+    readme_path = root / "grimmory" / "README.md"
     changed_any = False
     if readme_path.exists():
         txt = readme_path.read_text(encoding="utf-8")
@@ -125,11 +125,11 @@ def update_files(root: Path, tag_with_v: str, tag_no_v: str):
     if changed_any:
         changed.append(str(readme_path.relative_to(root)))
 
-    # booklore/Dockerfile (ARG BOOKLORE_TAG)
-    dockerfile_path = root / "booklore" / "Dockerfile"
+    # grimmory/Dockerfile (ARG GRIMMORY_TAG)
+    dockerfile_path = root / "grimmory" / "Dockerfile"
     if replace_in_file(
         dockerfile_path,
-        r'(?m)^(ARG\s+BOOKLORE_TAG\s*=\s*)(v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\s*$',
+        r'(?m)^(ARG\s+GRIMMORY_TAG\s*=\s*)(v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\s*$',
         r"\g<1>" + tag_with_v,
     ):
         changed.append(str(dockerfile_path.relative_to(root)))
@@ -148,7 +148,7 @@ def write_outputs(outputs: dict):
 
 def main():
     # Args
-    repo = "booklore-app/booklore"
+    repo = "grimmory-tools/grimmory"
     args = sys.argv[1:]
     if "--repo" in args:
         i = args.index("--repo")

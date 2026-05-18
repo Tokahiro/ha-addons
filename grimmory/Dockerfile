@@ -1,5 +1,5 @@
-ARG BOOKLORE_TAG=v2.3.0
-FROM ghcr.io/booklore-app/booklore:${BOOKLORE_TAG}
+ARG GRIMMORY_TAG=v3.1.0
+FROM ghcr.io/grimmory-tools/grimmory:${GRIMMORY_TAG}
 
 # Small tools + nginx + mount utilities
 RUN set -eux; \
@@ -20,7 +20,7 @@ RUN set -eux; \
     fi
 
 # Use our Nginx config for 6060 -> 8080 proxy with WS support
-COPY nginx/booklore.conf /etc/nginx/conf.d/default.conf
+COPY nginx/grimmory.conf /etc/nginx/conf.d/default.conf
 
 # (Optional) Bashio for easier Services API usage
 ARG BASHIO_VERSION=0.16.2

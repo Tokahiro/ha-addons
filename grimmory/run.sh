@@ -2,7 +2,7 @@
 # shellcheck shell=bash
 set -euo pipefail
 
-log(){ echo "[booklore-addon] $*"; }
+log(){ echo "[grimmory-addon] $*"; }
 
 # Optional: Bashio for options & Services API helpers
 if [ -f /usr/lib/bashio/bashio ]; then
@@ -73,11 +73,11 @@ mount_external_disks() {
     fi
 
     log "Processing external mounts..."
-    
+
     # Show available devices for debugging
     log "Available block devices:"
     lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT 2>/dev/null || log "lsblk command failed"
-    
+
     # Show supported filesystems
     fstypessupport=$(grep -v nodev < /proc/filesystems | awk '{$1=" "$1}1' | tr -d '\n\t')
     log "Supported filesystems: $fstypessupport"
@@ -89,7 +89,7 @@ mount_external_disks() {
     while IFS= read -r mount_value; do
         # Skip empty values that might result from jq parsing
         [ -z "$mount_value" ] && continue
-        
+
         # Check global timeout
         local current_time=$(date +%s)
         local elapsed=$((current_time - global_start_time))
@@ -120,13 +120,13 @@ mount_external_disks() {
             log "ERROR: The specified device '$device' does not exist or is not a block device. Skipping."
             continue
         fi
-        
+
         # Create unique mount point
         mount_point="${base_mount}/${mount_name}"
-        
+
         # Check if device is already mounted somewhere
         existing_mount=$(findmnt -rn -S "$device" -o TARGET 2>/dev/null | head -n1 || echo "")
-        
+
         if [ -n "$existing_mount" ]; then
             log "INFO: Device '$device' is already mounted at '$existing_mount'."
             # Create a symlink to the existing mount if it's not at our expected location
@@ -140,7 +140,7 @@ mount_external_disks() {
             fi
             continue
         fi
-        
+
         # Create mount point if it doesn't exist
         mkdir -p "$mount_point"
 
@@ -148,14 +148,14 @@ mount_external_disks() {
         log "Detecting filesystem type for '$device'..."
         fstype=$(lsblk "$device" -no fstype 2>/dev/null || echo "unknown")
         log "Detected filesystem type: $fstype"
-        
+
         # Get supported filesystems
         fstypessupport=$(grep -v nodev /proc/filesystems 2>/dev/null | awk '{print $2}' | tr '\n' ' ' | sed 's/ $//' || echo "ext2 ext3 ext4 vfat ntfs")
-        
+
         # Set filesystem-specific options
         mount_options="nosuid,relatime,noexec"
         mount_type="auto"
-        
+
         case "$fstype" in
             exfat | vfat | msdos)
                 log "WARNING: $fstype permissions and ACL don't work - using experimental support"
@@ -186,14 +186,14 @@ mount_external_disks() {
                 mount_options="rw,noatime"
                 ;;
         esac
-        
+
         # Attempt to mount the device - using exact approach from alexbelgium addons
         log "Mounting '$device' to '$mount_point'..."
-        
+
         mount_success=false
-        
+
         # Mount the device
-        
+
         # Try mount with filesystem type first
         if mount -t "$mount_type" "$device" "$mount_point" -o "$mount_options" 2>/dev/null; then
             mount_success=true
@@ -207,7 +207,7 @@ mount_external_disks() {
                 log "WARNING: Failed to mount '$device'. Continuing without this mount."
             fi
         fi
-        
+
         if [ "$mount_success" = true ]; then
             MOUNTED_PATHS+=("$mount_point")
         else
@@ -219,6 +219,7 @@ mount_external_disks() {
     # Report summary
     if [ ${#MOUNTED_PATHS[@]} -gt 0 ]; then
         log "Successfully mounted ${#MOUNTED_PATHS[@]} device(s) at: ${MOUNTED_PATHS[*]}"
+        export GRIMMORY_LIBRARY_PATHS="${MOUNTED_PATHS[*]}"
         export BOOKLORE_LIBRARY_PATHS="${MOUNTED_PATHS[*]}"
     else
         log "No external devices were mounted."
@@ -262,8 +263,8 @@ else
 fi
 
 # Apply defaults if empty
-[ -z "${BOOKS_DIR:-}" ] && BOOKS_DIR="/media/booklore/books"
-[ -z "${BOOKDROP_DIR:-}" ] && BOOKDROP_DIR="/share/booklore/bookdrop"
+[ -z "${BOOKS_DIR:-}" ] && BOOKS_DIR="/media/grimmory/books"
+[ -z "${BOOKDROP_DIR:-}" ] && BOOKDROP_DIR="/share/grimmory/bookdrop"
 [ -z "${DATA_DIR:-}" ] && DATA_DIR="/data"
 
 log "Using BOOKS_DIR=${BOOKS_DIR}"
@@ -297,7 +298,7 @@ fi
 ln -sfn "$BOOKDROP_DIR" /bookdrop
 log "Linked /bookdrop -> $BOOKDROP_DIR"
 
-DB_NAME="$(get_opt 'db_name' 'booklore')"
+DB_NAME="$(get_opt 'db_name' 'grimmory')"
 
 # ---- MariaDB auto-discovery or manual fallback ----
 # Always try service discovery first (since we have mysql:need in config)
@@ -319,7 +320,7 @@ fi
 if [ -z "${DB_HOST:-}" ]; then
   DB_HOST="$(get_opt 'db_host' 'core-mariadb')"
   DB_PORT="$(get_opt 'db_port' '3306')"
-  DB_USER="$(get_opt 'db_user' 'booklore')"
+  DB_USER="$(get_opt 'db_user' 'grimmory')"
   DB_PASS="$(get_opt 'db_password' 'CHANGE_ME')"
   log "Using manual DB configuration at ${DB_HOST}:${DB_PORT}"
 fi
@@ -328,7 +329,8 @@ fi
 export DATABASE_URL="jdbc:mariadb://${DB_HOST}:${DB_PORT}/${DB_NAME}"
 export DATABASE_USERNAME="${DB_USER}"
 export DATABASE_PASSWORD="${DB_PASS}"
+export GRIMMORY_PORT=6060
 export BOOKLORE_PORT=6060
 
-# ---- Start BookLore ----
+# ---- Start Grimmory ----
 /start.sh

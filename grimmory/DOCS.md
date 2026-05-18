@@ -1,22 +1,22 @@
-# BookLore Add-on Documentation
+# Grimmory Add-on Documentation
 
-> 📚 **Version 2.3.0** - Your personal digital library in Home Assistant
+> 📚 **Version 3.1.0** - Your personal digital library in Home Assistant
 
 ## 🚀 Quick Start
 
-1. **Install** the BookLore add-on from the Home Assistant store
+1. **Install** the Grimmory add-on from the Home Assistant store
 2. **Start** the add-on (it works with default settings!)
-3. **Open** BookLore from your Home Assistant sidebar
+3. **Open** Grimmory from your Home Assistant sidebar
 4. **Add books** to your `/media` folder and enjoy!
 
 ## ⚙️ Configuration
 
 ### Basic Setup
-Most users don't need to change anything - BookLore works great out of the box!
+Most users don't need to change anything - Grimmory works great out of the box!
 
 ```yaml
 # Default configuration (works for most users)
-db_name: "booklore"
+db_name: "grimmory"
 mounts: []
 ```
 
@@ -36,9 +36,9 @@ mounts:
 - 📍 Your drives appear in `/mnt/` (e.g., `/mnt/MyBooks`)
 
 ### Database
-BookLore automatically finds and uses the MariaDB add-on for best performance. If you don't have it, BookLore uses a built-in database.
+Grimmory automatically finds and uses the MariaDB add-on for best performance.
 
-**Want to use a different database?**
+**Want to use a different database server?**
 ```yaml
 db_host: "your-database-server"
 db_user: "your-username"
@@ -49,10 +49,23 @@ db_password: "your-password"
 
 Use any OPDS-compatible app (like Moon+ Reader) to access your library:
 
-1. Open BookLore in your browser
+1. Open Grimmory in your browser
 2. Find your OPDS URL in the settings
 3. Add it to your mobile reading app
 4. Use your Home Assistant login
+
+## 🔄 Migrating from Booklore
+
+Grimmory is forward-compatible with existing Booklore MariaDB databases. To migrate:
+
+1. **Back up** your Booklore database (recommended)
+2. **Install** the Grimmory add-on
+3. **Configure** `db_name` and `db_user` to match your existing Booklore values:
+   ```yaml
+   db_name: "booklore"
+   db_user: "booklore"
+   ```
+4. **Start** Grimmory — it auto-migrates the schema on first boot
 
 ## 🔧 Troubleshooting
 
@@ -81,4 +94,4 @@ Need more help? [Open an issue on GitHub](https://github.com/Tokahiro/ha-addons/
 
 ---
 
-*That's it! BookLore is designed to be simple and just work. Enjoy your digital library! 📚*
+*That's it! Grimmory is designed to be simple and just work. Enjoy your digital library! 📚*
