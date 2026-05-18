@@ -1,38 +1,19 @@
-ARG GRIMMORY_TAG=v3.1.0
-FROM ghcr.io/grimmory-tools/grimmory:${GRIMMORY_TAG}
+ARG GRIMMORY_REF=v3.1.0
+FROM ghcr.io/grimmory-tools/grimmory:${GRIMMORY_REF}
 
-# Small tools + nginx + mount utilities
-RUN set -eux; \
-    if command -v apk >/dev/null 2>&1; then \
-      apk add --no-cache bash curl jq nginx \
-        util-linux e2fsprogs ntfs-3g exfat-utils; \
-    elif command -v apt-get >/dev/null 2>&1; then \
-      apt-get update && apt-get install -y --no-install-recommends \
-        bash curl jq nginx mount util-linux e2fsprogs \
-        ntfs-3g exfat-utils exfat-fuse && \
-        rm -rf /var/lib/apt/lists/*; \
-    elif command -v microdnf >/dev/null 2>&1; then \
-      microdnf install -y bash curl jq nginx \
-        util-linux e2fsprogs ntfs-3g exfat-utils && \
-        microdnf clean all; \
-    else \
-      echo "Assuming mount utilities present."; \
-    fi
+# Mount utilities, nginx (reverse proxy), and jq (options parsing)
+RUN apk add --no-cache \
+    bash curl jq nginx \
+    util-linux e2fsprogs ntfs-3g exfat-utils
 
-# Use our Nginx config for 6060 -> 8080 proxy with WS support
-COPY nginx/grimmory.conf /etc/nginx/conf.d/default.conf
+# Replace Alpine's default nginx server with the Grimmory ingress proxy config
+RUN rm -f /etc/nginx/http.d/default.conf
+COPY nginx/grimmory.conf /etc/nginx/http.d/default.conf
 
-# (Optional) Bashio for easier Services API usage
-ARG BASHIO_VERSION=0.16.2
-RUN curl -fsSL https://github.com/hassio-addons/bashio/archive/refs/tags/v${BASHIO_VERSION}.tar.gz \
-  | tar xz -C /tmp && \
-  if [ -d "/tmp/bashio-${BASHIO_VERSION}" ]; then \
-    mv /tmp/bashio-${BASHIO_VERSION} /usr/lib/bashio && \
-    echo "Bashio installed successfully"; \
-  else \
-    echo "Warning: Bashio installation failed, fallback mode will be used"; \
-  fi
-
+# Install helper library and entrypoint
+COPY rootfs/ /
 COPY run.sh /run.sh
-RUN chmod +x /run.sh
+RUN chmod +x /run.sh \
+    && chmod +x /usr/local/lib/grimmory/*.sh
+
 ENTRYPOINT ["/run.sh"]

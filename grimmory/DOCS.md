@@ -67,6 +67,21 @@ Grimmory is forward-compatible with existing Booklore MariaDB databases. To migr
    ```
 4. **Start** Grimmory — it auto-migrates the schema on first boot
 
+## ⚠️ Migration Notes (v3.1.0)
+
+The following options and environment variables were removed in this release:
+
+- **`mount` (singular)** — use the `mounts` list instead:
+  ```yaml
+  # Old (no longer works)
+  mount: "MyDrive"
+
+  # New
+  mounts:
+    - "MyDrive"
+  ```
+- **`BOOKLORE_PORT` / `BOOKLORE_LIBRARY_PATHS`** — these internal environment variable aliases have been removed. If you have custom scripts or integrations that read them, switch to `GRIMMORY_PORT` and `GRIMMORY_LIBRARY_PATHS`.
+
 ## 🔧 Troubleshooting
 
 ### Common Issues

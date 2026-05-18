@@ -2,335 +2,77 @@
 # shellcheck shell=bash
 set -euo pipefail
 
-log(){ echo "[grimmory-addon] $*"; }
+_LIB=/usr/local/lib/grimmory
+# shellcheck source=/dev/null
+. "${_LIB}/log.sh"
+# shellcheck source=/dev/null
+. "${_LIB}/options.sh"
+# shellcheck source=/dev/null
+. "${_LIB}/mounts.sh"
+# shellcheck source=/dev/null
+. "${_LIB}/paths.sh"
+# shellcheck source=rootfs/usr/local/lib/grimmory/database.sh
+. "${_LIB}/database.sh"
 
-# Optional: Bashio for options & Services API helpers
-if [ -f /usr/lib/bashio/bashio ]; then
-  # shellcheck disable=SC1091
-  source /usr/lib/bashio/bashio
-  HAS_BASHIO=1
-else
-  HAS_BASHIO=0
-fi
+# Global PID for signal forwarding.
+_GRIMMORY_APP_PID=""
+_grimmory_stop() { kill -TERM "$_GRIMMORY_APP_PID" 2>/dev/null || true; }
 
+main() {
+  mkdir -p /var/run/grimmory
 
-# ---- Read options from UI ----
-get_opt() {
-  local key="$1" def="${2:-}"
-  if [ "$HAS_BASHIO" -eq 1 ]; then
-    bashio::config "$key" || echo -n "$def"
-  else
-    jq -r --arg def "$def" ".${key} // \$def" /data/options.json
-  fi
+  # ---- External disk mounts ----
+  local mounts_json
+  mounts_json=$(grimmory::opt::get_json 'mounts' '[]')
+  grimmory::mounts::process_all "$mounts_json"
+
+  # ---- Persistent paths ----
+  local books_dir bookdrop_dir data_dir
+  books_dir=$(grimmory::opt::get    'books_dir'    '/media/grimmory/books')
+  bookdrop_dir=$(grimmory::opt::get 'bookdrop_dir' '/share/grimmory/bookdrop')
+  data_dir=$(grimmory::opt::get     'data_dir'     '/data/grimmory')
+
+  grimmory::log::info "books_dir=${books_dir}"
+  grimmory::log::info "bookdrop_dir=${bookdrop_dir}"
+  grimmory::log::info "data_dir=${data_dir}"
+
+  grimmory::paths::ensure_dir "$books_dir" "$bookdrop_dir" "$data_dir"
+  grimmory::paths::link "$data_dir"    /app/data
+  grimmory::paths::link "$books_dir"   /books
+  grimmory::paths::link "$bookdrop_dir" /bookdrop
+
+  # ---- Database ----
+  local db_name
+  db_name=$(grimmory::opt::get 'db_name' 'grimmory')
+  DB_HOST="" DB_PORT="" DB_USER="" DB_PASS=""  # populated by grimmory::db::resolve
+  grimmory::db::resolve
+
+  export DATABASE_URL="jdbc:mariadb://${DB_HOST}:${DB_PORT}/${db_name}"
+  export DATABASE_USERNAME="${DB_USER}"
+  export DATABASE_PASSWORD="${DB_PASS}"
+  export GRIMMORY_PORT=6060
+
+  local lib_paths
+  lib_paths=$(grimmory::mounts::library_paths)
+  [[ -n "$lib_paths" ]] && export GRIMMORY_LIBRARY_PATHS="$lib_paths"
+
+  # ---- Start nginx reverse proxy ----
+  grimmory::log::info "Starting nginx..."
+  nginx
+
+  # ---- Start Grimmory (upstream entrypoint handles user/group setup) ----
+  grimmory::log::info "Starting Grimmory..."
+  trap _grimmory_stop TERM INT
+  /usr/local/bin/entrypoint.sh "$@" &
+  _GRIMMORY_APP_PID=$!
+
+  wait "$_GRIMMORY_APP_PID"
+  local exit_code=$?
+
+  nginx -s quit 2>/dev/null || true
+  grimmory::mounts::cleanup_all
+
+  return "$exit_code"
 }
 
-# ---- External Disk Mounting V3 (Multi-Mount) ----
-
-# Global array to track successfully mounted paths
-declare -a MOUNTED_PATHS=()
-
-mount_external_disks() {
-    local mounts_json mount_value device mount_point mount_name
-    local base_mount="/mnt"  # Use /mnt like alexbelgium addons, not /share
-    local mount_opts="rw,noatime"
-    local global_start_time=$(date +%s)
-    local global_timeout=120  # 2 minutes global timeout
-
-    # Check for legacy single mount option for backward compatibility
-    if [ "$HAS_BASHIO" -eq 1 ]; then
-        if ! bashio::config.has_value 'mounts'; then
-            legacy_mount=$(bashio::config 'mount' '')
-            if [ -n "$legacy_mount" ]; then
-                bashio::log.warning "Using legacy 'mount' option. Please migrate to the 'mounts' list."
-                mounts_json="[\"$legacy_mount\"]"
-            else
-                mounts_json="[]"
-            fi
-        else
-            mounts_json=$(bashio::config 'mounts')
-        fi
-    else
-        # Fallback to jq when bashio is not available
-        if jq -e '.mounts' /data/options.json >/dev/null 2>&1; then
-            mounts_json=$(jq -r '.mounts' /data/options.json)
-        elif jq -e '.mount' /data/options.json >/dev/null 2>&1; then
-            legacy_mount=$(jq -r '.mount // ""' /data/options.json)
-            if [ -n "$legacy_mount" ]; then
-                log "Using legacy 'mount' option. Please migrate to the 'mounts' list."
-                mounts_json="[\"$legacy_mount\"]"
-            else
-                mounts_json="[]"
-            fi
-        else
-            mounts_json="[]"
-        fi
-    fi
-
-    # If mounts list is empty, do nothing.
-    if [ -z "$mounts_json" ] || [ "$mounts_json" = "[]" ]; then
-        log "No external mounts specified. Using default storage."
-        return 0
-    fi
-
-    log "Processing external mounts..."
-
-    # Show available devices for debugging
-    log "Available block devices:"
-    lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT 2>/dev/null || log "lsblk command failed"
-
-    # Show supported filesystems
-    fstypessupport=$(grep -v nodev < /proc/filesystems | awk '{$1=" "$1}1' | tr -d '\n\t')
-    log "Supported filesystems: $fstypessupport"
-
-    # Create base directory if it doesn't exist
-    mkdir -p "$base_mount"
-
-    # Parse JSON array and iterate through each entry
-    while IFS= read -r mount_value; do
-        # Skip empty values that might result from jq parsing
-        [ -z "$mount_value" ] && continue
-
-        # Check global timeout
-        local current_time=$(date +%s)
-        local elapsed=$((current_time - global_start_time))
-        if [ $elapsed -ge $global_timeout ]; then
-            log "WARNING: Global timeout reached after ${elapsed} seconds. Stopping mount attempts."
-            log "WARNING: Addon will continue with mounts completed so far."
-            break
-        fi
-
-        log "--- Processing mount: $mount_value ---"
-
-        # Intelligent detection: Is it a device path or a label?
-        if [[ "$mount_value" == /dev/* ]]; then
-            device="$mount_value"
-            mount_name=$(echo "$mount_value" | sed 's|^/dev/||; s|/|-|g')
-        else
-            device=$(blkid -L "$mount_value" 2>/dev/null)
-            if [ -z "$device" ]; then
-                log "ERROR: A device with the label '$mount_value' could not be found. Skipping."
-                continue
-            fi
-            log "Found device '$device' for label '$mount_value'."
-            mount_name=$(echo "$mount_value" | sed 's/[^a-zA-Z0-9_-]/_/g')
-        fi
-
-        # Check if device exists
-        if [ ! -b "$device" ]; then
-            log "ERROR: The specified device '$device' does not exist or is not a block device. Skipping."
-            continue
-        fi
-
-        # Create unique mount point
-        mount_point="${base_mount}/${mount_name}"
-
-        # Check if device is already mounted somewhere
-        existing_mount=$(findmnt -rn -S "$device" -o TARGET 2>/dev/null | head -n1 || echo "")
-
-        if [ -n "$existing_mount" ]; then
-            log "INFO: Device '$device' is already mounted at '$existing_mount'."
-            # Create a symlink to the existing mount if it's not at our expected location
-            if [ "$existing_mount" != "$mount_point" ]; then
-                log "INFO: Creating symlink from '$mount_point' to existing mount at '$existing_mount'."
-                mkdir -p "$(dirname "$mount_point")"
-                ln -sfn "$existing_mount" "$mount_point"
-                MOUNTED_PATHS+=("$mount_point")
-            else
-                MOUNTED_PATHS+=("$mount_point")
-            fi
-            continue
-        fi
-
-        # Create mount point if it doesn't exist
-        mkdir -p "$mount_point"
-
-        # Detect filesystem type and set appropriate mount options
-        log "Detecting filesystem type for '$device'..."
-        fstype=$(lsblk "$device" -no fstype 2>/dev/null || echo "unknown")
-        log "Detected filesystem type: $fstype"
-
-        # Get supported filesystems
-        fstypessupport=$(grep -v nodev /proc/filesystems 2>/dev/null | awk '{print $2}' | tr '\n' ' ' | sed 's/ $//' || echo "ext2 ext3 ext4 vfat ntfs")
-
-        # Set filesystem-specific options
-        mount_options="nosuid,relatime,noexec"
-        mount_type="auto"
-
-        case "$fstype" in
-            exfat | vfat | msdos)
-                log "WARNING: $fstype permissions and ACL don't work - using experimental support"
-                mount_options="${mount_options},umask=000"
-                ;;
-            ntfs)
-                log "WARNING: $fstype is experimental support"
-                mount_options="${mount_options},umask=000"
-                mount_type="ntfs"
-                ;;
-            squashfs)
-                log "WARNING: $fstype is experimental support"
-                mount_options="loop"
-                mount_type="squashfs"
-                ;;
-            ext2 | ext3 | ext4 | xfs | btrfs)
-                # Standard Linux filesystems - use default options with rw
-                mount_options="rw,noatime"
-                ;;
-            *)
-                if [[ "${fstypessupport}" != *"${fstype}"* ]] && [ "$fstype" != "unknown" ]; then
-                    log "ERROR: Filesystem type '$fstype' for device '$device' is not supported by this system."
-                    log "Supported filesystems: $fstypessupport"
-                    rmdir "$mount_point" 2>/dev/null || true
-                    continue
-                fi
-                # Use default options for unknown or other supported filesystems
-                mount_options="rw,noatime"
-                ;;
-        esac
-
-        # Attempt to mount the device - using exact approach from alexbelgium addons
-        log "Mounting '$device' to '$mount_point'..."
-
-        mount_success=false
-
-        # Mount the device
-
-        # Try mount with filesystem type first
-        if mount -t "$mount_type" "$device" "$mount_point" -o "$mount_options" 2>/dev/null; then
-            mount_success=true
-            log "Successfully mounted '$device' to '$mount_point'."
-        else
-            # If first attempt fails, try without type specification (auto-detect)
-            if mount "$device" "$mount_point" -o "$mount_options" 2>/dev/null; then
-                mount_success=true
-                log "Successfully mounted '$device' to '$mount_point' (auto-detected type)."
-            else
-                log "WARNING: Failed to mount '$device'. Continuing without this mount."
-            fi
-        fi
-
-        if [ "$mount_success" = true ]; then
-            MOUNTED_PATHS+=("$mount_point")
-        else
-            # Clean up the created directory if mount fails
-            rmdir "$mount_point" 2>/dev/null || true
-        fi
-    done < <(echo "$mounts_json" | jq -r '.[]')
-
-    # Report summary
-    if [ ${#MOUNTED_PATHS[@]} -gt 0 ]; then
-        log "Successfully mounted ${#MOUNTED_PATHS[@]} device(s) at: ${MOUNTED_PATHS[*]}"
-        export GRIMMORY_LIBRARY_PATHS="${MOUNTED_PATHS[*]}"
-        export BOOKLORE_LIBRARY_PATHS="${MOUNTED_PATHS[*]}"
-    else
-        log "No external devices were mounted."
-    fi
-}
-
-# Cleanup function for graceful shutdown
-cleanup_mounts() {
-    if [ ${#MOUNTED_PATHS[@]} -eq 0 ]; then
-        return
-    fi
-
-    for mount_point in "${MOUNTED_PATHS[@]}"; do
-        if mountpoint -q "$mount_point"; then
-            if umount "$mount_point"; then
-                rmdir "$mount_point" 2>/dev/null || true
-            fi
-        fi
-    done
-}
-
-# Set up trap for cleanup on exit
-trap cleanup_mounts EXIT
-
-# Mount external disks
-mount_external_disks
-
-# ---- Persistent data and user-configurable paths ----
-# Ensure /data exists (Supervisor persists this path)
-mkdir -p /data
-
-# Read user options for books_dir and bookdrop_dir with safe fallbacks
-if [ "${HAS_BASHIO:-0}" -eq 1 ]; then
-  BOOKS_DIR="$(bashio::config 'books_dir' 2>/dev/null || true)"
-  BOOKDROP_DIR="$(bashio::config 'bookdrop_dir' 2>/dev/null || true)"
-  DATA_DIR="$(bashio::config 'data_dir' 2>/dev/null || true)"
-else
-  BOOKS_DIR="$(jq -r '.books_dir // empty' /data/options.json 2>/dev/null || true)"
-  BOOKDROP_DIR="$(jq -r '.bookdrop_dir // empty' /data/options.json 2>/dev/null || true)"
-  DATA_DIR="$(jq -r '.data_dir // empty' /data/options.json 2>/dev/null || true)"
-fi
-
-# Apply defaults if empty
-[ -z "${BOOKS_DIR:-}" ] && BOOKS_DIR="/media/grimmory/books"
-[ -z "${BOOKDROP_DIR:-}" ] && BOOKDROP_DIR="/share/grimmory/bookdrop"
-[ -z "${DATA_DIR:-}" ] && DATA_DIR="/data"
-
-log "Using BOOKS_DIR=${BOOKS_DIR}"
-log "Using BOOKDROP_DIR=${BOOKDROP_DIR}"
-log "Using DATA_DIR=${DATA_DIR}"
-
-# Ensure the configured directories exist (Supervisor maps persist these)
-mkdir -p "$BOOKS_DIR" "$BOOKDROP_DIR" "$DATA_DIR"
-
-# Symlink /app/data -> /data (idempotent; remove non-symlink if present)
-if [ -e /app/data ] && [ ! -L /app/data ]; then
-  log "Removing existing non-symlink /app/data"
-  rm -rf /app/data
-fi
-ln -sfn "$DATA_DIR" /app/data
-log "Linked /app/data -> $DATA_DIR"
-
-# Symlink /books -> $BOOKS_DIR (idempotent)
-if [ -e /books ] && [ ! -L /books ]; then
-  log "Removing existing non-symlink /books"
-  rm -rf /books
-fi
-ln -sfn "$BOOKS_DIR" /books
-log "Linked /books -> $BOOKS_DIR"
-
-# Symlink /bookdrop -> $BOOKDROP_DIR (idempotent)
-if [ -e /bookdrop ] && [ ! -L /bookdrop ]; then
-  log "Removing existing non-symlink /bookdrop"
-  rm -rf /bookdrop
-fi
-ln -sfn "$BOOKDROP_DIR" /bookdrop
-log "Linked /bookdrop -> $BOOKDROP_DIR"
-
-DB_NAME="$(get_opt 'db_name' 'grimmory')"
-
-# ---- MariaDB auto-discovery or manual fallback ----
-# Always try service discovery first (since we have mysql:need in config)
-if [ "$HAS_BASHIO" -eq 1 ] && bashio::services.available "mysql"; then
-  DB_HOST="$(bashio::services 'mysql' 'host')"
-  DB_PORT="$(bashio::services 'mysql' 'port')"
-  DB_USER="$(bashio::services 'mysql' 'username')"
-  DB_PASS="$(bashio::services 'mysql' 'password')"
-  log "Using MariaDB service discovery at ${DB_HOST}:${DB_PORT}"
-elif [ -n "${SUPERVISOR_TOKEN:-}" ] && curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/services/mysql >/dev/null; then
-  JSON="$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/services/mysql)"
-  DB_HOST="$(echo "$JSON" | jq -r '.data.host // .data.mysql.host')"
-  DB_PORT="$(echo "$JSON" | jq -r '.data.port // .data.mysql.port')"
-  DB_USER="$(echo "$JSON" | jq -r '.data.username // .data.mysql.username')"
-  DB_PASS="$(echo "$JSON" | jq -r '.data.password // .data.mysql.password')"
-  log "Using MariaDB (raw Services API) at ${DB_HOST}:${DB_PORT}"
-fi
-
-if [ -z "${DB_HOST:-}" ]; then
-  DB_HOST="$(get_opt 'db_host' 'core-mariadb')"
-  DB_PORT="$(get_opt 'db_port' '3306')"
-  DB_USER="$(get_opt 'db_user' 'grimmory')"
-  DB_PASS="$(get_opt 'db_password' 'CHANGE_ME')"
-  log "Using manual DB configuration at ${DB_HOST}:${DB_PORT}"
-fi
-
-# ---- Export upstream env vars ----
-export DATABASE_URL="jdbc:mariadb://${DB_HOST}:${DB_PORT}/${DB_NAME}"
-export DATABASE_USERNAME="${DB_USER}"
-export DATABASE_PASSWORD="${DB_PASS}"
-export GRIMMORY_PORT=6060
-export BOOKLORE_PORT=6060
-
-# ---- Start Grimmory ----
-/start.sh
+main "$@"
