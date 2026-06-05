@@ -5,4 +5,4 @@ build_from:
 
 args:
   # Pin the upstream Grimmory version to build
-  GRIMMORY_REF: "v3.1.0"
+  GRIMMORY_REF: "v3.2.0"
