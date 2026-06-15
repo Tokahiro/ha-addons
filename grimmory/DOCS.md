@@ -1,6 +1,6 @@
 # Grimmory Add-on Documentation
 
-> 📚 **Version 3.2.0** - Your personal digital library in Home Assistant
+> 📚 **Version 3.2.1** - Your personal digital library in Home Assistant
 
 ## 🚀 Quick Start
 
