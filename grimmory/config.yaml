@@ -1,6 +1,6 @@
 name: "Grimmory"
 slug: "grimmory"
-version: "3.2.2"  # add-on version (not the Grimmory image tag)
+version: "3.2.4"  # add-on version (not the Grimmory image tag)
 description: "Self-hosted book & comic library powered by Grimmory (community fork of Booklore)."
 url: "https://github.com/Tokahiro/ha-addons/tree/main/grimmory"
 arch:
