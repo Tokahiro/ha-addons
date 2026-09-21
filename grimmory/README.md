@@ -1,8 +1,8 @@
 # Grimmory - Home Assistant Add-on
 
-> 📚 **Version 3.4.1** - Your personal digital library
+> 📚 **Version 3.5.0** - Your personal digital library
 
-![Version](https://img.shields.io/badge/version-3.4.1-blue.svg)
+![Version](https://img.shields.io/badge/version-3.5.0-blue.svg)
 ![Arch](https://img.shields.io/badge/arch-aarch64%20%7C%20amd64%20%7C%20armv7-green.svg)
 ![Status](https://img.shields.io/badge/status-stable-green.svg)
 
