@@ -31,7 +31,7 @@ let hamhAreaOverrides;
 function hamhAreaType(room) {
   if (hamhAreaOverrides === undefined) {
     hamhAreaOverrides = {};
-    for (const pair of String(process.env.HAMH_AREA_TYPES ?? "").split(",")) {
+    for (const pair of String(process.env.AREA_TYPE_OVERRIDES ?? "").split(",")) {
       const [key, tag] = pair.split("=").map((s) => s.trim());
       if (key && tag) hamhAreaOverrides[key.toLowerCase()] = tag;
     }

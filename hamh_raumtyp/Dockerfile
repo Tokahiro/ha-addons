@@ -6,5 +6,5 @@ RUN set -e \
  && node /patch.mjs "$cli" \
  && node --check "$cli" \
  && grep -q '^exec home-assistant-matter-hub start' /docker-entrypoint.sh \
- && sed -i "s|^exec home-assistant-matter-hub start|export HAMH_AREA_TYPES=\"\$(bashio::config 'area_types' '')\"\nexec home-assistant-matter-hub start|" /docker-entrypoint.sh \
- && grep -q 'HAMH_AREA_TYPES' /docker-entrypoint.sh
+ && sed -i "s|^exec home-assistant-matter-hub start|export AREA_TYPE_OVERRIDES=\"\$(bashio::config 'area_types' '')\"\nexec home-assistant-matter-hub start|" /docker-entrypoint.sh \
+ && grep -q 'AREA_TYPE_OVERRIDES' /docker-entrypoint.sh

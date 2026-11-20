@@ -1,4 +1,4 @@
-version: "2.0.60-raumtyp1"
+version: "2.0.60-raumtyp2"
 slug: hamh_raumtyp
 name: Matter Hub (area type test)
 description: Home-Assistant-Matter-Hub 2.0.60 with a Matter area type (areaType) for vacuum rooms, taken from the HA area. Test build.
