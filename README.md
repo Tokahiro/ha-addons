@@ -51,6 +51,9 @@ Transform your Home Assistant into a powerful book server with automatic organiz
 
 **Perfect for:** Book lovers, families, digital library enthusiasts, NAS users
 
+### Matter Hub (area type test)
+Test build of Home-Assistant-Matter-Hub 2.0.60 that sets a Matter area type for vacuum rooms. See [hamh_raumtyp](hamh_raumtyp/README.md).
+
 ---
 
 ## 🛠️ Installation & Setup
