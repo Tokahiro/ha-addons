@@ -1,0 +1,680 @@
+import { hap } from './hap.ts'
+import type { RingPlatformConfig } from './config.ts'
+import { PushNotificationAction, type RingCamera } from 'ring-client-api'
+import { BaseDataAccessory } from './base-data-accessory.ts'
+import {
+  catchError,
+  distinctUntilChanged,
+  exhaustMap,
+  filter,
+  finalize,
+  map,
+  mergeMap,
+  share,
+  startWith,
+  switchMap,
+  take,
+  takeUntil,
+  throttleTime,
+} from 'rxjs/operators'
+import { CameraSource, isHksvEnabled } from './camera-source.ts'
+import type { PlatformAccessory } from 'homebridge'
+import { TargetValueTimer } from './target-value-timer.ts'
+import { logError, logInfo } from 'ring-client-api/util'
+import { combineLatest, defer, EMPTY, firstValueFrom, merge, of, timer } from 'rxjs'
+import type { Observable, Subscription } from 'rxjs'
+import type { PushHealthReporter } from './push-health.ts'
+
+export const MOTION_WATCHDOG_MS = 30_000
+/** How long a battery camera's late snapshot is waited for, in the background, after an event. */
+export const SNAPSHOT_NOTIFICATION_WAIT_MS = 10_000
+/** How long an event waits for its snapshot on a camera whose snapshot notifications come. */
+export const SNAPSHOT_EVENT_WAIT_MS = 2000
+/** Waits for a snapshot that didn't come before a camera's events go to HomeKit at once again. */
+const MISSED_SNAPSHOT_WAITS_BEFORE_NO_WAIT = 3
+/** How often Ring's event history is checked once its push notifications are known to arrive. */
+export const HISTORY_CHECK_WHILE_PUSH_WORKS_MS = 5 * 60_000
+/** A push motion this close to a history event's time is taken as that event's notification. */
+export const PUSH_MATCH_WINDOW_MS = 90_000
+/** After a gap in checking, a history event older than this no longer gives motion. */
+export const HISTORY_MOTION_MAX_AGE_MS = 180_000
+/** A history event first seen less than this ago may still get its push; judged at a later check. */
+const PUSH_GRACE_MS = 30_000
+/** Checks in a row that found only pushed events (no misses in between) before push is trusted. */
+const MATCHES_TO_TRUST_PUSH = 2
+/**
+ * Ids no longer in the history are forgotten after this. Ids still in it are kept, however old:
+ * on a quiet camera the 10 newest events can be days old, and must not count as new again.
+ */
+const ID_MEMORY_MS = 60 * 60_000
+
+/**
+ * Motion from Ring's event history, for when its push notifications don't arrive.
+ *
+ * Checking every pollSeconds (20 s by default) costs some 4,300 Ring requests a day per camera,
+ * on the same session as everything else. So the history is checked that often only until motion
+ * events in it (two in a row) turn out to have come by push too; from then on push is trusted
+ * and the history is checked every 5 minutes as a safety net. A motion event no push reported
+ * switches back to frequent checks. While checking frequently every new event gives motion; after
+ * a gap (5-minute checks, a failure) only events from the last 3 minutes do, as one found later
+ * would only record an empty doorway.
+ */
+export function getHistoryMotionEvents(
+  device: Pick<RingCamera, 'name' | 'getEvents' | 'onNewNotification'> &
+    Partial<Pick<RingCamera, 'data'>>,
+  pollSeconds: number,
+  pushHealth?: PushHealthReporter,
+): Observable<boolean> {
+  return defer(() => {
+    const startedAt = Date.now() - 5000,
+      historySeen = new Map<string, number>(),
+      // Events that already gave motion from here (a young one is judged again later).
+      shownAsMotion = new Map<string, number>(),
+      // When an event not judged yet was first seen in the history (by the Pi's clock).
+      firstSeen = new Map<string, number>(),
+      pushIds = new Map<string, number>(),
+      pushMotionTimes: number[] = [],
+      baseRetryMs = Math.max(pollSeconds * 1000, 30_000),
+      forget = (ids: Map<string, number>, now: number) => {
+        for (const [id, at] of ids) {
+          if (now - at > ID_MEMORY_MS) ids.delete(id)
+        }
+      }
+    let pushWorks = false,
+      matchedInARow = 0,
+      lastCheckAt = 0,
+      lastSuccessAt = 0,
+      failureCount = 0,
+      nextCheckAt = 0
+
+    const notifications = device.onNewNotification.subscribe((notification) => {
+      pushHealth?.recordPush(
+        notification.android_config?.category === PushNotificationAction.Motion,
+      )
+      if (notification.android_config?.category !== PushNotificationAction.Motion) return
+      const id = notification.data?.event?.ding?.id,
+        now = Date.now()
+      if (id !== undefined) pushIds.set(String(id), now)
+      pushMotionTimes.push(now)
+      if (pushMotionTimes.length > 50) pushMotionTimes.shift()
+    })
+
+    return timer(pollSeconds * 1000, pollSeconds * 1000).pipe(
+      exhaustMap(() => {
+        const now = Date.now()
+        if (now < nextCheckAt) return EMPTY
+        if (pushWorks && now - lastCheckAt < HISTORY_CHECK_WHILE_PUSH_WORKS_MS) {
+          return EMPTY
+        }
+        lastCheckAt = now
+        // Checked recently and frequently: anything new is recent, whatever the clocks say
+        // (a Pi clock ahead of Ring's would otherwise make every event look too old).
+        const checkedJustBefore = !pushWorks && now - lastSuccessAt <= pollSeconds * 1000 + 30_000
+
+        return defer(() => device.getEvents({ limit: 10, kind: 'motion' })).pipe(
+          mergeMap(({ events }) => {
+            const checkedAt = Date.now()
+            failureCount = 0
+            nextCheckAt = 0
+            lastSuccessAt = checkedAt
+            // Still in the history: remembered as long as it stays there.
+            for (const event of events) {
+              const id = event.ding_id_str || String(event.ding_id)
+              for (const ids of [historySeen, shownAsMotion, firstSeen, pushIds]) {
+                if (ids.has(id) && ids !== firstSeen) ids.set(id, checkedAt)
+              }
+            }
+            forget(historySeen, checkedAt)
+            forget(shownAsMotion, checkedAt)
+            forget(firstSeen, checkedAt)
+            forget(pushIds, checkedAt)
+
+            const isPushed = (event: (typeof events)[number]) => {
+              const id = event.ding_id_str || String(event.ding_id),
+                at = Date.parse(event.created_at)
+              return (
+                pushIds.has(id) ||
+                pushMotionTimes.some((t) => Math.abs(t - at) <= PUSH_MATCH_WINDOW_MS)
+              )
+            }
+            const newEvents = events.filter((event) => {
+              const id = event.ding_id_str || String(event.ding_id)
+              return (
+                event.kind === 'motion' &&
+                Date.parse(event.created_at) >= startedAt &&
+                !historySeen.has(id)
+              )
+            })
+            // Too young to know whether its push is still coming: judged at a later check, but
+            // it can still give motion now (once). Young by when it was first seen here, so a
+            // Pi clock behind Ring's doesn't keep it young.
+            const young = (event: (typeof events)[number]) => {
+              const id = event.ding_id_str || String(event.ding_id)
+              if (!firstSeen.has(id)) firstSeen.set(id, checkedAt)
+              return !isPushed(event) && checkedAt - (firstSeen.get(id) ?? checkedAt) < PUSH_GRACE_MS
+            }
+            const judged = newEvents.filter((event) => !young(event)),
+              missed = judged.filter((event) => !isPushed(event))
+            judged.forEach((event) => {
+              const id = event.ding_id_str || String(event.ding_id)
+              historySeen.set(id, checkedAt)
+              firstSeen.delete(id)
+            })
+            if (pushWorks && judged.length < newEvents.length) {
+              // An event to judge soon: check again shortly rather than in 5 minutes.
+              lastCheckAt = checkedAt - HISTORY_CHECK_WHILE_PUSH_WORKS_MS + PUSH_GRACE_MS + 10_000
+            }
+
+            if (missed.length) {
+              // Ring sends no alert while motion is snoozed, nor, when set to alert for people
+              // only, for motion it saw no person in: those say nothing about whether its
+              // pushes reach the plugin.
+              const peopleOnly =
+                  device.data?.settings?.advanced_motion_detection_human_only_mode === true,
+                unexplained = device.data?.motion_snooze
+                  ? []
+                  : missed.filter(
+                    (event) => !peopleOnly || event.cv_properties?.person_detected !== false,
+                  )
+              if (unexplained.length) pushHealth?.recordMissed(unexplained.length)
+              matchedInARow = 0
+              if (pushWorks) {
+                pushWorks = false
+                logInfo(
+                  `${device.name}: Ring event history shows motion no push notification reported; checking it every ${pollSeconds} s again`,
+                )
+              }
+            } else if (judged.length) {
+              // One per check: a single push can match several events.
+              matchedInARow += 1
+              if (!pushWorks && matchedInARow >= MATCHES_TO_TRUST_PUSH) {
+                pushWorks = true
+                logInfo(
+                  `${device.name}: Ring push notifications are arriving; checking Ring event history every ${HISTORY_CHECK_WHILE_PUSH_WORKS_MS / 60_000} minutes instead of every ${pollSeconds} s`,
+                )
+              }
+            }
+
+            const unpushedNow = newEvents.filter((event) => !isPushed(event)),
+              givesMotion = unpushedNow.some(
+                (event) =>
+                  !shownAsMotion.has(event.ding_id_str || String(event.ding_id)) &&
+                  (checkedJustBefore ||
+                    checkedAt - Date.parse(event.created_at) <= HISTORY_MOTION_MAX_AGE_MS),
+              )
+            unpushedNow.forEach((event) =>
+              shownAsMotion.set(event.ding_id_str || String(event.ding_id), checkedAt),
+            )
+            if (!givesMotion) return EMPTY
+
+            logInfo(`${device.name} Detected Motion from Ring event history fallback`)
+            return of(true)
+          }),
+          catchError(() => {
+            failureCount++
+            const retryDelayMs = Math.min(
+              5 * 60 * 1000,
+              baseRetryMs * 2 ** Math.min(failureCount - 1, 4),
+            )
+            nextCheckAt = Date.now() + retryDelayMs
+            const nextInMs = pushWorks
+              ? Math.max(retryDelayMs, lastCheckAt + HISTORY_CHECK_WHILE_PUSH_WORKS_MS - Date.now())
+              : retryDelayMs
+            logError(
+              `${device.name} failed to poll Ring event history for motion fallback; retrying in ${Math.ceil(nextInMs / 1000)} seconds`,
+            )
+            return EMPTY
+          }),
+        )
+      }),
+      finalize(() => notifications.unsubscribe()),
+    )
+  })
+}
+
+/**
+ * Motion from Ring's push notifications, as HomeKit needs it: true for every new motion alert.
+ *
+ * ring-client-api's onMotionDetected is true while any motion alert is active (each lasts 65 s)
+ * and only reports changes, so a new alert while an earlier one is still active gives nothing.
+ * The watchdog below turns motion off after 30 s, so a second visit 30-65 s after the first
+ * would never turn it on again: no recording and no notification. So every new motion
+ * notification gives a true (restarting the watchdog), and onMotionDetected only adds its
+ * false once all alerts have expired. A notification repeating an alert seen in the last two
+ * minutes (Ring sends a second one with the snapshot; a reconnect can resend) is not a new visit.
+ */
+export const REPEATED_ALERT_WINDOW_MS = 120_000
+
+export function getPushMotionEvents(
+  camera: Pick<RingCamera, 'onMotionDetected' | 'onNewNotification'>,
+): Observable<boolean> {
+  return defer(() => {
+    const seenAt = new Map<string, number>()
+    return merge(
+      camera.onMotionDetected.pipe(filter((motion) => !motion)),
+      camera.onNewNotification.pipe(
+        filter((notification) => {
+          if (notification.android_config?.category !== PushNotificationAction.Motion) {
+            return false
+          }
+          const now = Date.now(),
+            id = notification.data?.event?.ding?.id
+          for (const [seenId, at] of seenAt) {
+            if (now - at > REPEATED_ALERT_WINDOW_MS) seenAt.delete(seenId)
+          }
+          if (id === undefined) return true
+          if (seenAt.has(String(id))) return false
+          seenAt.set(String(id), now)
+          return true
+        }),
+        map(() => true),
+      ),
+    )
+  })
+}
+
+export function addMotionWatchdog(
+  motionEvents: Observable<boolean>,
+  watchdogMs = MOTION_WATCHDOG_MS,
+): Observable<boolean> {
+  return motionEvents.pipe(
+    switchMap((motion) => {
+      if (!motion) {
+        return of(false)
+      }
+
+      return merge(
+        of(true),
+        timer(watchdogMs).pipe(map(() => false)),
+      )
+    }),
+  )
+}
+
+/**
+ * The camera's motion, also on for a while after each doorbell press (doorbellPressMotion), so
+ * HomeKit records a visitor even when Ring reported no motion: while a live view is open Ring
+ * reports none, and someone may press and leave before it does. A press while motion is already
+ * on keeps it on (no off and on again, which would be a second recording); motion goes off once
+ * neither the camera nor a press in the last watchdogMs keeps it on.
+ */
+export function addDoorbellPressMotion(
+  motion: Observable<boolean>,
+  presses: Observable<unknown>,
+  onPressMotion?: () => void,
+  watchdogMs = MOTION_WATCHDOG_MS,
+): Observable<boolean> {
+  return combineLatest([
+    motion.pipe(startWith(false)),
+    addMotionWatchdog(
+      presses.pipe(
+        // A failing press stream must not stop the camera's own motion.
+        catchError((error) => {
+          logError(error)
+          return EMPTY
+        }),
+        map(() => true),
+      ),
+      watchdogMs,
+    ).pipe(startWith(false)),
+  ]).pipe(
+    // Repeated trues are dropped (HomeKit sees no change from them anyway), so a second motion
+    // alert while motion is on no longer reloads the snapshot; a press reloads it itself.
+    distinctUntilChanged(
+      (a, b) => (a[0] || a[1]) === (b[0] || b[1]),
+    ),
+    map(([cameraMotion, pressMotion]) => {
+      const on = cameraMotion || pressMotion
+      if (on && !cameraMotion) onPressMotion?.()
+      return on
+    }),
+  )
+}
+
+export class Camera extends BaseDataAccessory<RingCamera> {
+  private cameraSource
+
+  public readonly device
+  public readonly accessory
+  public readonly config
+  public readonly motionDetected?: Observable<boolean>
+  private readonly pushHealth?: PushHealthReporter
+
+  constructor(
+    device: RingCamera,
+    accessory: PlatformAccessory,
+    config: RingPlatformConfig,
+    pushHealth?: PushHealthReporter,
+  ) {
+    super()
+
+    this.device = device
+    this.accessory = accessory
+    this.config = config
+    this.pushHealth = pushHealth
+    this.cameraSource = new CameraSource(this.device, this.config)
+
+    if (!hap.CameraController) {
+      const error =
+        'HAP CameraController not found.  Please make sure you are on homebridge version 1.0.0 or newer'
+      logError(error)
+      throw new Error(error)
+    }
+
+    const { Characteristic, Service } = hap,
+      { ChargingState, StatusLowBattery } = Characteristic
+
+    accessory.configureController(this.cameraSource.controller)
+
+    this.registerCharacteristic({
+      characteristicType: Characteristic.Mute,
+      serviceType: Service.Microphone,
+      getValue: () => false,
+    })
+
+    this.registerCharacteristic({
+      characteristicType: Characteristic.Mute,
+      serviceType: Service.Speaker,
+      getValue: () => false,
+    })
+
+    // One motion source, shared by the camera's motion sensor and the optional
+    // notification sensor, so Ring's event history isn't polled twice.
+    if (!config.hideCameraMotionSensor || config.cameraMotionNotificationSensor) {
+      this.motionDetected = this.getMotionDetectedObservable().pipe(share())
+    }
+
+    if (config.doorbellPressMotion && device.isDoorbot) {
+      if (config.hideCameraMotionSensor) {
+        logInfo(
+          `${device.name}: doorbellPressMotion has no effect while hideCameraMotionSensor is on (HomeKit records on the camera's motion sensor)`,
+        )
+      } else if (!isHksvEnabled(config, device.operatingOnBattery)) {
+        logInfo(`${device.name}: doorbellPressMotion has no effect without HKSV recording`)
+      }
+    }
+
+    if (!config.hideCameraMotionSensor && this.motionDetected) {
+      // Only the camera's own motion sensor (which starts HKSV recordings): a press already
+      // gives a doorbell notification, so the separate notification sensor doesn't get it too.
+      // Only with HKSV recording: without it a press would just add a motion notification.
+      const cameraMotion =
+        config.doorbellPressMotion &&
+        device.isDoorbot &&
+        isHksvEnabled(config, device.operatingOnBattery)
+          ? addDoorbellPressMotion(this.motionDetected, device.onDoorbellPressed, () =>
+            logInfo(`${device.name}: doorbell press sent to HomeKit as motion (doorbellPressMotion)`),
+          )
+          : this.motionDetected
+      this.registerObservableCharacteristic({
+        characteristicType: Characteristic.MotionDetected,
+        serviceType: Service.MotionSensor,
+        onValue: cameraMotion.pipe(
+          switchMap((motion) => {
+            if (!motion) {
+              return Promise.resolve(false)
+            }
+
+            return this.loadSnapshotForEvent('Detected Motion', true)
+          }),
+        ),
+      })
+    }
+
+    if (device.isDoorbot) {
+      this.registerObservableCharacteristic({
+        characteristicType: Characteristic.ProgrammableSwitchEvent,
+        serviceType: Service.Doorbell,
+        onValue: device.onDoorbellPressed.pipe(
+          throttleTime(15000),
+          switchMap(() => {
+            return this.loadSnapshotForEvent(
+              'Doorbell Pressed',
+              Characteristic.ProgrammableSwitchEvent.SINGLE_PRESS,
+            )
+          }),
+        ),
+      })
+
+      if (!config.hideDoorbellSwitch) {
+        this.registerObservableCharacteristic({
+          characteristicType: Characteristic.ProgrammableSwitchEvent,
+          serviceType: Service.StatelessProgrammableSwitch,
+          onValue: device.onDoorbellPressed.pipe(
+            map(() => Characteristic.ProgrammableSwitchEvent.SINGLE_PRESS),
+          ),
+        })
+
+        // Hide long and double press events by setting max value
+        this.getService(Service.StatelessProgrammableSwitch)
+          .getCharacteristic(Characteristic.ProgrammableSwitchEvent)
+          .setProps({
+            maxValue: Characteristic.ProgrammableSwitchEvent.SINGLE_PRESS,
+          })
+      }
+    }
+
+    if (device.hasLight && !config.hideCameraLight) {
+      const lightTargetTimer = new TargetValueTimer<boolean>()
+      this.registerCharacteristic({
+        characteristicType: Characteristic.On,
+        serviceType: Service.Lightbulb,
+        getValue: (data) => {
+          const value = lightTargetTimer.hasTarget()
+            ? lightTargetTimer.getTarget()
+            : data.led_status === 'on'
+
+          return value
+        },
+        setValue: (value: boolean) => {
+          // Allow 30 seconds for the light value to update in our status updates from Ring
+          lightTargetTimer.setTarget(value, 30000)
+          return device.setLight(value)
+        },
+        requestUpdate: () => device.requestUpdate(),
+      })
+    }
+
+    if (device.hasSiren && !config.hideCameraSirenSwitch) {
+      this.registerCharacteristic({
+        characteristicType: Characteristic.On,
+        serviceType: Service.Switch,
+        serviceSubType: 'Siren',
+        name: device.name + ' Siren',
+        getValue: (data) => {
+          return Boolean(
+            data.siren_status && data.siren_status.seconds_remaining,
+          )
+        },
+        setValue: (value) => device.setSiren(value),
+        requestUpdate: () => device.requestUpdate(),
+      })
+    }
+
+    if (device.hasInHomeDoorbell && !config.hideInHomeDoorbellSwitch) {
+      this.registerObservableCharacteristic({
+        characteristicType: Characteristic.On,
+        serviceType: Service.Switch,
+        serviceSubType: 'In-Home Doorbell',
+        name: device.name + ' In-Home Doorbell',
+        onValue: device.onInHomeDoorbellStatus,
+        setValue: (value) => device.setInHomeDoorbell(value),
+        requestUpdate: () => device.requestUpdate(),
+      })
+    }
+
+    this.registerCharacteristic({
+      characteristicType: Characteristic.Manufacturer,
+      serviceType: Service.AccessoryInformation,
+      getValue: (data) => {
+        if ('metadata' in data && 'third_party_manufacturer' in data.metadata) {
+          return data.metadata.third_party_manufacturer
+        }
+        return 'Ring'
+      },
+    })
+    this.registerCharacteristic({
+      characteristicType: Characteristic.Model,
+      serviceType: Service.AccessoryInformation,
+      getValue: (data) => {
+        if ('metadata' in data && 'third_party_model' in data.metadata) {
+          return data.metadata.third_party_model
+        }
+        return `${device.model} (${data.kind})`
+      },
+    })
+    this.registerCharacteristic({
+      characteristicType: Characteristic.SerialNumber,
+      serviceType: Service.AccessoryInformation,
+      getValue: (data) => data.device_id,
+    })
+
+    if (device.hasBattery) {
+      this.registerCharacteristic({
+        characteristicType: Characteristic.StatusLowBattery,
+        serviceType: Service.Battery,
+        getValue: () => {
+          return device.hasLowBattery
+            ? StatusLowBattery.BATTERY_LEVEL_LOW
+            : StatusLowBattery.BATTERY_LEVEL_NORMAL
+        },
+      })
+
+      this.registerCharacteristic({
+        characteristicType: Characteristic.ChargingState,
+        serviceType: Service.Battery,
+        getValue: () => {
+          return device.isCharging
+            ? ChargingState.CHARGING
+            : ChargingState.NOT_CHARGING
+        },
+      })
+
+      this.registerObservableCharacteristic({
+        characteristicType: Characteristic.BatteryLevel,
+        serviceType: Service.Battery,
+        onValue: device.onBatteryLevel.pipe(
+          map((batteryLevel) => {
+            return batteryLevel === null ? 100 : batteryLevel
+          }),
+        ),
+      })
+    }
+  }
+
+  private getMotionDetectedObservable(): Observable<boolean> {
+    const pushMotionEvents = getPushMotionEvents(this.device)
+
+    if (this.config.enableCameraMotionHistory === false) {
+      return addMotionWatchdog(pushMotionEvents)
+    }
+
+    const pollSeconds = Math.max(this.config.cameraStatusPollingSeconds ?? 20, 10)
+    return addMotionWatchdog(
+      merge(pushMotionEvents, getHistoryMotionEvents(this.device, pollSeconds, this.pushHealth)),
+    )
+  }
+
+  private pendingSnapshotNotification?: Subscription
+  /** Whether this camera's events are followed by a notification with a snapshot (Ring Protect). */
+  private snapshotNotificationsArrive = false
+  private missedSnapshotWaits = 0
+  private lastMissedSnapshotWaitAt = 0
+
+  /** The image uuid of the next notification that has one. */
+  private nextNotificationSnapshotUuid() {
+    return this.device.onNewNotification.pipe(
+      map((notification) => notification.img?.snapshot_uuid),
+      filter((uuid): uuid is string => Boolean(uuid)),
+      take(1),
+    )
+  }
+
+  /**
+   * Loads the snapshot of the next notification that has one, if it comes within 10 s. With
+   * learn, called as the event happens, a snapshot within the event wait teaches the camera
+   * that its events are worth waiting for.
+   */
+  private loadSnapshotFromNextNotification({ learn }: { learn: boolean }) {
+    this.pendingSnapshotNotification?.unsubscribe()
+    const startedAt = Date.now()
+    this.pendingSnapshotNotification = this.nextNotificationSnapshotUuid()
+      .pipe(takeUntil(timer(SNAPSHOT_NOTIFICATION_WAIT_MS)))
+      .subscribe((uuid) => {
+        // Waiting is only worth it if the snapshot would have come within the wait.
+        if (learn && Date.now() - startedAt <= SNAPSHOT_EVENT_WAIT_MS) {
+          this.snapshotNotificationsArrive = true
+          this.missedSnapshotWaits = 0
+        }
+        this.cameraSource.loadSnapshot(uuid).catch(() => {
+          // the event was already sent; HomeKit keeps the last snapshot
+        })
+      })
+  }
+
+  private async loadSnapshotForEvent<T>(
+    eventDescription: string,
+    characteristicValue: T,
+  ) {
+    let imageUuid = this.device.latestNotificationSnapshotUuid
+
+    /**
+     * A camera that can't take a snapshot while recording (on battery, or a few wired models)
+     * may get its first notification without an image uuid, followed shortly by a second one
+     * with it. That second notification usually only comes with Ring Protect, and Ring's data
+     * doesn't say whether a camera has it, so each camera learns it: until a snapshot has come
+     * this way, the event goes to HomeKit at once (recordings and doorbell notifications start
+     * 2 s sooner) and a snapshot that comes within 10 s is loaded for later requests (the Home
+     * app tile). Once a snapshot has come within 2 s of an event, events wait up to 2 s for one,
+     * as before, so HomeKit's notification gets it; after 3 events in a row without one, they
+     * go at once again. This is learned again after each restart.
+     */
+    if (!this.device.canTakeSnapshotWhileRecording && !imageUuid) {
+      if (!this.snapshotNotificationsArrive) {
+        this.loadSnapshotFromNextNotification({ learn: true })
+        logInfo(this.device.name + ' ' + eventDescription)
+        return characteristicValue
+      }
+
+      imageUuid = await firstValueFrom(
+        this.nextNotificationSnapshotUuid().pipe(takeUntil(timer(SNAPSHOT_EVENT_WAIT_MS))),
+        { defaultValue: undefined },
+      )
+
+      if (!imageUuid) {
+        // A press usually runs two waits at once (the press and its motion): one miss per event.
+        const now = Date.now()
+        if (now - this.lastMissedSnapshotWaitAt > SNAPSHOT_EVENT_WAIT_MS) {
+          this.lastMissedSnapshotWaitAt = now
+          this.missedSnapshotWaits++
+          if (this.missedSnapshotWaits >= MISSED_SNAPSHOT_WAITS_BEFORE_NO_WAIT) {
+            this.snapshotNotificationsArrive = false
+          }
+        }
+        // a snapshot that still comes is loaded for later requests (the Home app tile), but
+        // doesn't count as coming in time: it's already past the event's wait
+        this.loadSnapshotFromNextNotification({ learn: false })
+        // did not receive an image uuid and one can't be taken while recording. Proceed without a snapshot
+        logInfo(this.device.name + ' ' + eventDescription)
+        return characteristicValue
+      }
+      this.missedSnapshotWaits = 0
+    }
+
+    logInfo(
+      this.device.name +
+        ` ${eventDescription}. Loading snapshot before sending event to HomeKit`,
+    )
+
+    try {
+      await this.cameraSource.loadSnapshot(imageUuid)
+    } catch {
+      logInfo(
+        this.device.name +
+          ' Failed to load snapshot.  Sending event to HomeKit without new snapshot',
+      )
+    }
+
+    return characteristicValue
+  }
+}
