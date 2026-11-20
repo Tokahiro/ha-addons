@@ -1,0 +1,489 @@
+{
+  "pluginAlias": "Ring Secure Video",
+  "pluginType": "platform",
+  "singular": true,
+  "customUi": true,
+  "customUiPath": "./lib/homebridge-ui",
+  "customUiDevServer": "http://localhost:3000/api/plugins/settings-ui/homebridge-ring-secure-video",
+  "headerDisplay": "Sign in to Ring here to get a refresh token (\"Generate New Refresh Token\" signs in again or changes accounts). See the [README](https://github.com/zmanuel1234/homebridge-ring-secure-video#readme) for each setting.",
+  "accountLinkingHeader": "Please supply your Ring credentials.  These will be used to contact the Ring servers and generate a unique access token for your account.  Your email and password will be sent directly to Ring and will not be stored anywhere.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "refreshToken": {
+        "title": "Refresh Token",
+        "type": "string",
+        "description": "Click \"Generate New Refresh Token\" above to change accounts or if your refresh token has expired",
+        "placeholder": "Refresh Token"
+      },
+      "alarmOnEntryDelay": {
+        "title": "Alarm on Entry Delay",
+        "type": "boolean",
+        "description": "If enabled, HomeKit will register a delayed entry event as a triggered alarm. Useful if you want to know as soon as someone opens a door with the alarm armed"
+      },
+      "enableHksv": {
+        "title": "Enable HKSV",
+        "type": "boolean",
+        "default": true,
+        "description": "Enables HomeKit Secure Video recording for supported Ring cameras."
+      },
+      "media": {
+        "title": "Recording Settings (media)",
+        "type": "object",
+        "description": "The recording profile and optional recording settings.",
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "title": "Media profile",
+            "type": "string",
+            "description": "adaptive (default), lowPower or quality. Use lowPower for a Raspberry Pi and other small computers: lower recording resolutions, one recording at a time, and copy (no re-encoding) unless another codec is set. Verified on a Pi 4 with copy, h264_v4l2m2m and libx264.",
+            "oneOf": [
+              { "title": "adaptive", "enum": ["adaptive"] },
+              { "title": "lowPower", "enum": ["lowPower"] },
+              { "title": "quality", "enum": ["quality"] }
+            ]
+          },
+          "recording": {
+            "title": "Recording overrides",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "codec": {
+                "title": "Recording codec",
+                "type": "string",
+                "enum": ["auto", "copy", "libx264", "h264_v4l2m2m", "h264_videotoolbox"],
+                "description": "Preferred H.264 handling for recordings. auto (the default, except copy in lowPower) chooses the lowest-cost option for the profile; copy records Ring's video without re-encoding. Complete clips are verified on a Raspberry Pi 4 with a Ring Video Doorbell 3 Plus for copy, h264_v4l2m2m and libx264; if clips from another camera don't play with copy, try h264_v4l2m2m (Raspberry Pi 4; the Pi 5 has no hardware H.264 encoder) or libx264."
+              },
+              "bitrateKbps": {
+                "title": "Video bitrate (kbps)",
+                "type": "integer",
+                "minimum": 256,
+                "maximum": 12000,
+                "description": "Target video bitrate when re-encoding (not with copy). Defaults to the profile's (1000 lowPower, 3000 adaptive, 5000 quality). Increase this first if fast motion becomes blocky or pixelated; 4000-6000 is a good starting range for wired cameras."
+              },
+              "maxBitrateKbps": {
+                "title": "Maximum video bitrate (kbps)",
+                "type": "integer",
+                "minimum": 256,
+                "maximum": 20000,
+                "description": "Maximum burst video bitrate when using VBR. Defaults to 2x the bitrate; 8000-12000 is a practical range for a bitrate of 4000-6000."
+              },
+              "bufferSizeKbps": {
+                "title": "Rate-control buffer size (kbps)",
+                "type": "integer",
+                "minimum": 256,
+                "maximum": 40000,
+                "description": "FFmpeg rate-control buffer size. Defaults to 2x the maximum bitrate. Leave unset unless you are tuning bitrate stability."
+              },
+              "rateControl": {
+                "title": "Rate control",
+                "type": "string",
+                "enum": ["vbr", "cbr"],
+                "default": "vbr",
+                "description": "Use constrained variable bitrate or request constant bitrate. CBR ignores CRF."
+              },
+              "crf": {
+                "title": "CRF (libx264 quality)",
+                "type": "integer",
+                "minimum": 18,
+                "maximum": 35,
+                "description": "Optional libx264 quality value for VBR recordings (libx264 only). Lower values improve quality and use more bitrate and CPU; try 20-23."
+              },
+              "preset": {
+                "title": "libx264 preset",
+                "type": "string",
+                "enum": ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"],
+                "description": "libx264 speed/quality preset (libx264 only). Defaults to ultrafast in lowPower, otherwise veryfast. Move toward fast or medium for quality, or superfast for lower CPU."
+              },
+              "keyframeInterval": {
+                "title": "Keyframe interval (frames)",
+                "type": "integer",
+                "minimum": 5,
+                "maximum": 240,
+                "description": "Maximum frames between keyframes when re-encoding. Defaults to 30, the recommended value; shorter intervals can improve fragmenting at the cost of bitrate."
+              },
+              "prebufferLengthMs": {
+                "title": "Prebuffer length (ms)",
+                "type": "integer",
+                "minimum": 4000,
+                "maximum": 16000,
+                "description": "The pre-event length the plugin tells HomeKit it supports, 4000-16000 ms (default 4000). It doesn't add video from before the motion: the plugin keeps no video buffer and starts Ring's video when a recording begins, so leave this at the default."
+              },
+              "fragmentLengthMs": {
+                "title": "Fragment length (ms)",
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 8000,
+                "description": "Target fragmented MP4 duration. Defaults to 4000 ms."
+              },
+              "maxDurationSeconds": {
+                "title": "Maximum recording length (s)",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 300,
+                "placeholder": 180,
+                "description": "Safety cap per recording stream (default 180); HomeKit normally ends a recording when motion stops. Set 0 to disable the cap."
+              },
+              "maxQueuedBytes": {
+                "title": "Maximum queued bytes per recording",
+                "type": "integer",
+                "minimum": 1048576,
+                "maximum": 67108864,
+                "description": "Maximum recording data queued in memory per recording before it is closed to protect Homebridge. Defaults to 6 MB in lowPower, otherwise 16 MB."
+              },
+              "maxConcurrentRecordings": {
+                "title": "Maximum simultaneous recordings",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4,
+                "description": "Maximum simultaneous recording pipelines. Defaults to 1 in lowPower, otherwise 2; keep 1 on a Raspberry Pi."
+              }
+            }
+          }
+        }
+      },
+      "forceRefreshRingPushCredentials": {
+        "title": "Force Ring Push Credential Refresh",
+        "type": "boolean",
+        "description": "Advanced recovery option: forces a fresh Ring push notification registration on next startup. Enable only when Ring motion/button events are not arriving live, restart Homebridge, then disable after the updated refresh token is saved. Each refresh adds a registration with Ring, and repeated refreshes can make Ring stop delivering notifications to the plugin; if that happens, remove the plugin from Authorized Client Devices in the Ring app's Control Center and sign in again with a new refresh token."
+      },
+      "forceRefreshRingApiSession": {
+        "title": "Force Ring API Session Refresh",
+        "type": "boolean",
+        "description": "Advanced recovery option: rotates the Ring API hardware/session identity and forces fresh push credentials on next startup. Try this when refreshing only Ring push credentials still leaves motion/button events delayed or missing. The option clears itself after the updated refresh token is saved. The identity is stored in .ring.json in the Homebridge storage folder, which other Ring plugins in the same Homebridge (such as homebridge-ring) also use, so rotating it can affect their sign-in."
+      },
+      "automaticSessionRefresh": {
+        "title": "Automatic Ring Session Refresh",
+        "type": "boolean",
+        "description": "When Ring's event history shows motion but Ring has sent the plugin no push notification for it (3 events over at least 30 minutes, none pushed), the plugin does a Ring API session refresh by itself, as Force Ring API Session Refresh does: as a child bridge it restarts, otherwise at the next restart of Homebridge. Events while motion is snoozed are not counted, nor, when the camera alerts for people only, events without a person. At most once a day, and no more after 2 that brought no motion push notification. Needs the camera motion history fallback. Turn this off if Ring is set to send no motion alerts in some Modes or on a schedule. Each refresh adds an entry to Authorized Client Devices in the Ring app (remove the older homebridge-ring-secure-video entries) and changes the identity in .ring.json, which other Ring plugins in the same Homebridge also use.",
+        "default": true
+      },
+      "sessionRefreshSensor": {
+        "title": "Session Refresh Sensor",
+        "type": "boolean",
+        "description": "Adds a \"Ring Session Refreshed\" contact sensor that opens after an automatic Ring session refresh (10 s after the Home app is connected to it, within 3 minutes) and stays open for a day, so the Home app can notify you (turn on its notifications; needs a home hub): then remove the older homebridge-ring-secure-video entry from Authorized Client Devices in the Ring app. Needs Automatic Ring Session Refresh.",
+        "default": false
+      },
+      "enableCameraMotionHistory": {
+        "title": "Enable Camera Motion History Fallback",
+        "type": "boolean",
+        "description": "If enabled, cameras can synthesize motion from recent Ring event history when push notifications don't arrive. The history is checked frequently until push is seen to work, then every 5 minutes as a safety net. Disable this if you only want motion triggered by Ring notifications.",
+        "default": true
+      },
+      "disableHksvOnBattery": {
+        "title": "Disable HKSV On Battery Cameras",
+        "type": "boolean",
+        "description": "If enabled, HKSV is disabled on cameras running on battery, to reduce battery and network impact. Battery models that are wired (power mode wired in the Ring app) keep HKSV.",
+        "default": true
+      },
+      "homeKitAccessoryTag": {
+        "title": "HomeKit Accessory Tag",
+        "type": "string",
+        "description": "Optional tag appended to Ring accessory names and HomeKit identities. Change this to expose the same Ring devices as distinct accessories in Home app for debugging or multi-home testing."
+      },
+      "hideLightGroups": {
+        "title": "Hide Light Groups",
+        "type": "boolean",
+        "description": "Hides Ring lighting groups, allowing you to group lights differently in HomeKit than how you group them in the Ring app"
+      },
+      "hideDoorbellSwitch": {
+        "title": "Hide Doorbell Programmable Switch",
+        "type": "boolean",
+        "description": "Hides the Programmable Switch for Ring doorbells.  This switch is only useful for triggering an automation when the doorbell is pressed, so most users can safely hide it"
+      },
+      "hideCameraLight": {
+        "title": "Hide Camera Light",
+        "type": "boolean",
+        "description": "Hides the light switch of cameras with a light (Floodlight Cam, Spotlight Cam)."
+      },
+      "hideCameraMotionSensor": {
+        "title": "Hide Camera Motion Sensors",
+        "type": "boolean",
+        "description": "Hides each camera's motion sensor. HomeKit Secure Video records when that sensor reports motion, so hiding it also stops recordings (and makes Doorbell Press Starts a Recording do nothing)."
+      },
+      "cameraMotionNotificationSensor": {
+        "title": "Separate Motion Sensor for Notifications",
+        "type": "boolean",
+        "description": "Adds a \"<camera> Motion\" sensor for each camera, driven by the same motion events but not tied to the camera. With HomeKit Secure Video recording on, the Home app only notifies about the camera's own motion after analysing the clip; turn on notifications for this sensor instead to be told at once. It appears on this plugin's bridge."
+      },
+      "doorbellPressMotion": {
+        "title": "Doorbell Press Starts a Recording",
+        "type": "boolean",
+        "description": "For Ring doorbells with HomeKit Secure Video recording on: a doorbell press also turns on the camera's motion in HomeKit for 30 seconds, so HomeKit records the visitor even when Ring reported no motion (for example while a live view is open, or for someone who presses and leaves at once). A press while motion is already on keeps it on: one recording, not two. Notifications and automations on the camera's own motion sensor also see it; the separate notification sensor does not, as a press already gives a doorbell notification. No effect when the camera's motion sensor is hidden.",
+        "default": false
+      },
+      "hideCameraSirenSwitch": {
+        "title": "Hide Camera Siren Switch",
+        "type": "boolean",
+        "description": "Hides the siren switch of cameras with a siren."
+      },
+      "hideInHomeDoorbellSwitch": {
+        "title": "Hide In-Home Doorbell Switch",
+        "type": "boolean",
+        "description": "Hides the switch that turns the in-home (mechanical or digital) chime of a wired Ring doorbell on or off."
+      },
+      "hideAlarmSirenSwitch": {
+        "title": "Hide Alarm Siren Switch",
+        "type": "boolean",
+        "description": "Hides switch that allows you to turn on the siren of the Ring Alarm.  Enable this if your Siri commands keep setting off the siren and you don't care about having the switch"
+      },
+      "externalCameraIdSalt": {
+        "title": "External Camera ID Salt",
+        "type": "string",
+        "description": "Advanced recovery option: changing this forces new HomeKit identities for Ring camera external accessories."
+      },
+      "showPanicButtons": {
+        "title": "Show Panic Buttons",
+        "type": "boolean",
+        "description": "Creates a new `Panic Buttons` device in HomeKit with `Burglar Alarm` and `Fire Alarm` switches.  **Use these at your own risk: they are not guaranteed to work in an emergency, and no responsibility is taken for false alarms.**  These function just like the SOS sliders in the Ring app."
+      },
+      "ffmpegPath": {
+        "title": "Custom FFmpeg Path",
+        "type": "string",
+        "description": "A custom path to the ffmpeg executable. By default, the static binaries built in ffmpeg-for-homebridge will be used. If you prefer to use your own version of ffmpeg, you can pass a complete path, or simply [ ffmpeg ] to use ffmpeg from your PATH."
+      },
+      "nightModeBypassFor": {
+        "title": "Night Mode as Bypass For Mode",
+        "type": "string",
+        "description": "Allows you to use Night mode to \"Bypass and Arm\" a Ring Alarm.  If set and Night mode is activated from HomeKit, any open contact sensors will automatically be bypassed and the alarm will be set to the mode selected here.",
+        "oneOf": [
+          {
+            "title": "Home",
+            "enum": ["some"]
+          },
+          {
+            "title": "Away",
+            "enum": ["all"]
+          }
+        ]
+      },
+      "avoidSnapshotBatteryDrain": {
+        "title": "Avoid Snapshot Battery Drain",
+        "type": "boolean",
+        "description": "Causes snapshots for battery cameras to be fetched at a minimum 10 minute interval to avoid draining the battery.  This is useful if you have the Home app open constantly, causing frequent snapshot requests."
+      },
+      "beamDurationSeconds": {
+        "title": "Ring Smart Lighting Timer",
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 32767,
+        "description": "Ring Smart Lighting will only stay on for a set amount of time.  You can specify that duration here (in seconds).  If not specified, the light will stay on for the last duration used within the Ring app for individual lights, and 60 seconds for lighting groups.  Max value is 32767 which is ~9.1 hours"
+      },
+      "debug": {
+        "title": "Debug Logging",
+        "type": "boolean",
+        "description": "Turns on additional logging.  In particular, ffmpeg logging."
+      },
+      "disableLogs": {
+        "title": "Disable All Logging",
+        "type": "boolean",
+        "description": "Disables all logs generated by this plugin"
+      },
+      "cameraStatusPollingSeconds": {
+        "title": "Camera/Chime Status Polling",
+        "type": "integer",
+        "minimum": 1,
+        "placeholder": "Get camera status every __ seconds",
+        "description": "Camera/Chime status (such as light/siren/volume/snooze state) does not update live and must be fetched periodically.  By default this is done every 20 seconds"
+      },
+      "locationModePollingSeconds": {
+        "title": "Location Mode Polling",
+        "type": "integer",
+        "minimum": 0,
+        "placeholder": "Get current Location Mode every __ seconds",
+        "description": "Location Modes do not update live and must be fetched periodically.  By default this is done every 20 seconds for locations that have Location Modes enabled, and that do not have a Ring Alarm.  The Location Mode switch can be hidden by setting this option to 0"
+      },
+      "hideDeviceIds": {
+        "title": "Hide Device ID",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "locationIds": {
+        "title": "Location ID",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "onlyDeviceTypes": {
+        "title": "Device Types",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "name": {
+        "title": "Name",
+        "type": "string"
+      }
+    },
+    "required": ["refreshToken"]
+  },
+  "layout": [
+    {
+      "type": "flex",
+      "flex-flow": "row wrap",
+      "items": [
+        "refreshToken"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Optional Settings",
+      "expandable": false,
+      "items": [
+        {
+          "type": "fieldset",
+          "title": "HomeKit Secure Video",
+          "expandable": true,
+          "items": [
+            "enableHksv",
+            "disableHksvOnBattery",
+            "media"
+          ]
+        },
+        {
+          "type": "fieldset",
+          "title": "Motion and Doorbell",
+          "expandable": true,
+          "items": [
+            "cameraMotionNotificationSensor",
+            "doorbellPressMotion",
+            "enableCameraMotionHistory"
+          ]
+        },
+        {
+          "type": "fieldset",
+          "title": "Ring Session",
+          "expandable": true,
+          "items": [
+            "automaticSessionRefresh",
+            "sessionRefreshSensor",
+            "forceRefreshRingPushCredentials",
+            "forceRefreshRingApiSession"
+          ]
+        },
+        {
+          "type": "fieldset",
+          "title": "Alarm and Location Mode",
+          "expandable": true,
+          "items": [
+            "alarmOnEntryDelay",
+            "nightModeBypassFor",
+            "hideAlarmSirenSwitch",
+            "showPanicButtons",
+            "locationModePollingSeconds"
+          ]
+        },
+        {
+          "type": "fieldset",
+          "title": "Accessory Visibility",
+          "expandable": true,
+          "items": [
+            "hideLightGroups",
+            "hideDoorbellSwitch",
+            "hideCameraLight",
+            "hideCameraMotionSensor",
+            "hideCameraSirenSwitch",
+            "hideInHomeDoorbellSwitch"
+          ]
+        },
+        {
+          "type": "fieldset",
+          "title": "HomeKit Identity (advanced)",
+          "expandable": true,
+          "items": [
+            "homeKitAccessoryTag",
+            "externalCameraIdSalt"
+          ]
+        },
+        {
+          "type": "fieldset",
+          "title": "Device Filtering",
+          "expandable": true,
+          "items": [
+            {
+              "key": "hideDeviceIds",
+              "add": "Add Another Device ID",
+              "type": "array",
+              "items": [
+                {
+                  "type": "div",
+                  "displayFlex": true,
+                  "flex-direction": "row",
+                  "items": [
+                    {
+                      "key": "hideDeviceIds[]",
+                      "placeholder": "Device ID"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "help",
+              "helpvalue": "<p>If you would like to hide individual devices in HomeKit, enter the desired device IDs above.  The ID for each device is logged every time homebridge starts.</p>"
+            },
+            {
+              "key": "locationIds",
+              "type": "array",
+              "items": [
+                {
+                  "type": "div",
+                  "displayFlex": true,
+                  "flex-direction": "row",
+                  "items": [
+                    {
+                      "key": "locationIds[]",
+                      "placeholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx or xxxxx-xxxxx-x"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "help",
+              "helpvalue": "<p>If you have multiple locations configured in Ring but only want some of them in HomeKit, enter the desired location IDs above.  The ID for each location is logged every time homebridge starts.</p>"
+            },
+            {
+              "key": "onlyDeviceTypes",
+              "type": "array",
+              "items": [
+                {
+                  "type": "div",
+                  "displayFlex": true,
+                  "flex-direction": "row",
+                  "items": [
+                    {
+                      "key": "onlyDeviceTypes[]",
+                      "placeholder": "Device Type"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "help",
+              "helpvalue": "<p>If you only want to display certain device types, you can specify those device types here.  All other device types will be removed from HomeKit.  Example: security-panel to show your alarm, hp_cam_v1 to show floodlight cams.</p>"
+            }
+          ]
+        },
+        {
+          "type": "fieldset",
+          "title": "Cameras, Lights and Diagnostics",
+          "expandable": true,
+          "items": [
+            "avoidSnapshotBatteryDrain",
+            "beamDurationSeconds",
+            "cameraStatusPollingSeconds",
+            "ffmpegPath",
+            "debug",
+            "disableLogs"
+          ]
+        }
+      ]
+    }
+  ]
+}

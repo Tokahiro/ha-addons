@@ -1,0 +1,67 @@
+name: homebridge-ring-secure-video
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "homebridge-ring-secure-video/**"
+      - ".github/workflows/homebridge-ring-secure-video.yml"
+  pull_request:
+    paths:
+      - "homebridge-ring-secure-video/**"
+      - ".github/workflows/homebridge-ring-secure-video.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: homebridge-ring-secure-video
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - name: Pack
+        run: |
+          version=$(node -p "require('./package.json').version")
+          name="homebridge-ring-secure-video-${version//+/-}"
+          npm pack --ignore-scripts
+          mv "homebridge-ring-secure-video-${version}.tgz" "${name}.tgz"
+          echo "NAME=${name}" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME }}
+          path: homebridge-ring-secure-video/${{ env.NAME }}.tgz
+
+  release:
+    if: github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the release if it does not exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          file=$(ls dist/*.tgz)
+          tag=$(basename "$file" .tgz)
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "Release $tag exists. Raise the version in package.json for a new one."
+            exit 0
+          fi
+          gh release create "$tag" "$file" --target "$GITHUB_SHA" \
+            --title "$tag" \
+            --notes "Homebridge plugin homebridge-ring-secure-video, patched. See homebridge-ring-secure-video/FORK.md for install and CHANGELOG.md for the changes."

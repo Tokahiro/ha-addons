@@ -1,0 +1,91 @@
+{
+  "name": "homebridge-ring-secure-video",
+  "displayName": "Ring Secure Video",
+  "version": "1.0.4+fix.1",
+  "description": "Homebridge plugin for Ring devices with HomeKit Secure Video recording, based on homebridge-ring and homebridge-ring-hksv",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": "./lib/index.js",
+  "scripts": {
+    "build": "node -e \"require('fs').rmSync('lib', { recursive: true, force: true })\" && tsc && node -e \"require('fs').cpSync('./homebridge-ui/public', './lib/homebridge-ui/public', { recursive: true, filter: (src) => require('path').basename(src) !== 'tsconfig.json' })\"",
+    "lint": "eslint .",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "prepack": "npm run build",
+    "dev": "concurrently -c yellow,blue --kill-others \"npm:dev:build\" \"npm:dev:run\" ",
+    "dev:build": "tsc --watch --preserveWatchOutput",
+    "dev:run": "RING_DEBUG=true node --watch ./node_modules/.bin/homebridge -U ./.homebridge -P ./node_modules"
+  },
+  "dependencies": {
+    "@eneris/push-receiver": "4.3.1",
+    "@homebridge/camera-utils": "^3.0.0",
+    "@homebridge/plugin-ui-utils": "^2.3.0",
+    "ring-client-api": "14.3.0",
+    "rxjs": "^7.8.2",
+    "werift": "0.22.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.2",
+    "@typescript-eslint/parser": "^8.54.0",
+    "ajv": "8.20.0",
+    "concurrently": "^10.0.7",
+    "eslint": "9.39.2",
+    "globals": "17.14.0",
+    "homebridge": "^2.5.0",
+    "homebridge-config-ui-x": "^5.24.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.2"
+  },
+  "engines": {
+    "node": "^22.12 || ^24 || ^26",
+    "homebridge": "^1.8.0 || ^2.0.0-beta.0"
+  },
+  "homebridge": {
+    "pluginAlias": "Ring Secure Video",
+    "pluginType": "platform"
+  },
+  "author": "zmanuel1234",
+  "contributors": [
+    "Dusty Greif (homebridge-ring)",
+    "trinityhades (homebridge-ring-hksv)"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zmanuel1234/homebridge-ring-secure-video.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zmanuel1234/homebridge-ring-secure-video/issues"
+  },
+  "homepage": "https://github.com/zmanuel1234/homebridge-ring-secure-video#readme",
+  "files": [
+    "CHANGELOG.md",
+    "config.schema.json",
+    "lib",
+    "media"
+  ],
+  "keywords": [
+    "homebridge",
+    "homebridge-plugin",
+    "supports-hap",
+    "ring",
+    "hksv",
+    "homekit-secure-video",
+    "doorbell",
+    "doorbot",
+    "camera",
+    "alarm",
+    "smart",
+    "light",
+    "beam",
+    "security",
+    "category-security",
+    "category-lighting",
+    "category-video",
+    "category-hubs",
+    "category-outdoor"
+  ],
+  "allowScripts": {
+    "ffmpeg-for-homebridge@2.2.2": true,
+    "protobufjs@7.6.6": true
+  }
+}

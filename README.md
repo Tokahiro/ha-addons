@@ -11,6 +11,8 @@ Add-ons for Home Assistant OS and Home Assistant Supervised.
 | [Grimmory](grimmory/README.md) | Book and comic library with covers, metadata, a reader, OPDS for reading apps and one account per user. Works with USB, SATA, NVMe and SD storage. Grimmory is the community fork of the discontinued Booklore. |
 | [Matter Hub (area type test)](hamh_raumtyp/README.md) | Test build of Home-Assistant-Matter-Hub 2.0.60 that sets a Matter area type for vacuum rooms. |
 
+Not an add-on: [homebridge-ring-secure-video](homebridge-ring-secure-video/FORK.md) is a patched Homebridge plugin for Ring Intercom Video (one notification per ring, image in the notification).
+
 ## Install
 
 1. Click the button above, or add the repository by hand:

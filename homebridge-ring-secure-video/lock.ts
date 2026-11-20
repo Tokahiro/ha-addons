@@ -1,0 +1,111 @@
+import { BaseDeviceAccessory } from './base-device-accessory.ts'
+import type { RingDevice, RingDeviceData } from 'ring-client-api'
+import { distinctUntilChanged, skip } from 'rxjs/operators'
+import { hap } from './hap.ts'
+import type { RingPlatformConfig } from './config.ts'
+import type { PlatformAccessory } from 'homebridge'
+
+function getCurrentState({ locked }: RingDeviceData) {
+  const {
+    Characteristic: { LockCurrentState: State },
+  } = hap
+
+  switch (locked) {
+    case 'unlocked':
+      return State.UNSECURED
+    case 'locked':
+      return State.SECURED
+    case 'jammed':
+      return State.JAMMED
+    default:
+      return State.UNKNOWN
+  }
+}
+
+export class Lock extends BaseDeviceAccessory {
+  private targetState: any
+
+  public readonly device
+  public readonly accessory
+  public readonly config
+
+  constructor(
+    device: RingDevice,
+    accessory: PlatformAccessory,
+    config: RingPlatformConfig,
+  ) {
+    super()
+
+    this.device = device
+    this.accessory = accessory
+    this.config = config
+
+    const { Characteristic, Service } = hap
+
+    // Ring reported a new lock state (the requested one, a jam, or a change by hand): any
+    // target HomeKit was waiting for is over, and the target follows Ring's state again.
+    // (Storing the derived target here, as upstream does, would keep a jam's "locked" target
+    // pending, and a lock then unlocked by hand would show "Locking…".)
+    this.device.onData
+      .pipe(
+        distinctUntilChanged((a, b) => a.locked === b.locked),
+        skip(1),
+      )
+      .subscribe(() => {
+        this.targetState = undefined
+      })
+
+    this.registerCharacteristic({
+      characteristicType: Characteristic.LockCurrentState,
+      serviceType: Service.LockMechanism,
+      getValue: (data) => {
+        const state = getCurrentState(data)
+
+        if (state === this.targetState) {
+          this.targetState = undefined
+        }
+
+        return state
+      },
+    })
+
+    this.registerCharacteristic({
+      characteristicType: Characteristic.LockTargetState,
+      serviceType: Service.LockMechanism,
+      getValue: (data) => this.getTargetState(data),
+      setValue: (value) => this.setTargetState(value),
+    })
+  }
+
+  setTargetState(state: any) {
+    const {
+        Characteristic: { LockTargetState: State },
+      } = hap,
+      command = state === State.SECURED ? 'lock' : 'unlock'
+
+    this.targetState =
+      state === getCurrentState(this.device.data) ? undefined : state
+
+    return this.device.sendCommand(`lock.${command}`)
+  }
+
+  getTargetState(data: RingDeviceData) {
+    if (this.targetState !== undefined) {
+      return this.targetState
+    }
+
+    const {
+      Characteristic: { LockCurrentState, LockTargetState },
+    } = hap
+    const currentState = getCurrentState(data)
+
+    if (
+      currentState === LockCurrentState.JAMMED ||
+      currentState === LockCurrentState.UNKNOWN
+    ) {
+      return LockTargetState.SECURED
+    }
+
+    return currentState
+  }
+}
