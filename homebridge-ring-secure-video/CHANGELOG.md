@@ -1,5 +1,19 @@
 # homebridge-ring-secure-video
 
+## 1.0.4+fix.1 (2026-11-20)
+
+Changes on top of 1.0.4 in Tokahiro/ha-addons. Homebridge shows it as 1.0.4.
+
+- Ring Intercom Video: one ring gives one doorbell event. The push and the 5 s poll of
+  `dings/active` both report the same ring, about 6 s apart, and the 3 s throttle let both
+  through (two Home notifications, two pre-warmed calls). Dings within 30 s now count as one,
+  for the doorbell, auto-open and the pre-warm.
+- Ring Intercom Video: the doorbell notification gets an image. Ring has no snapshot for it
+  (`doorbots/<id>/snapshot` gives 404, also during a ring), so the snapshot is one frame of the
+  ding's pre-warmed call, or of a call that runs (recording, live view). HomeKit's snapshot
+  request waits for it (8 s at most). The pre-warmed call stays up 15 s after the frame, so the
+  recording still gets it. No call is started only for a snapshot.
+
 ## 1.0.4 (2026-11-14)
 
 - A live view that stops by itself (HomeKit stopped sending for a few seconds, or for about 20 s if

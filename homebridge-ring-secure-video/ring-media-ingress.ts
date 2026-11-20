@@ -166,6 +166,11 @@ export class RingMediaIngress {
     this.idleGraceMs = idleGraceMs
   }
 
+  /** True while a Ring call runs or connects. */
+  get hasCall() {
+    return Boolean(this.active && !this.active.ended)
+  }
+
   async acquire(
     consumer: string,
     signal?: AbortSignal,

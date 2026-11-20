@@ -176,3 +176,31 @@ test('an unclaimed pre-warmed call is stopped after 20 s without touching a late
   await new Promise((resolve) => setImmediate(resolve))
   assert.deepEqual(stopped, ['pre-warmed'])
 })
+
+test('a ring that comes by push and by poll is one doorbell event and one pre-warmed call', async (t) => {
+  const calls = []
+  t.mock.method(RingCamera.prototype, 'startLiveCall', function () {
+    calls.push(1)
+    return new Promise(() => {})
+  })
+  mockTimers(t)
+  const requests = [],
+    device = fakeIntercom('intercom_handset_video', requests)
+  device.restClient.request = async () => [{ id: 9, doorbot_id: 1, kind: 'ding' }]
+  const intercom = new Intercom(
+    device,
+    new PlatformAccessory(device.name, hapNodejs.uuid.generate('push-and-poll')),
+    {},
+  )
+  const pressed = []
+  intercom
+    .getService(hapNodejs.Service.Doorbell)
+    .getCharacteristic(hapNodejs.Characteristic.ProgrammableSwitchEvent)
+    .on('change', () => pressed.push(1))
+
+  device.onDing.next() // the push
+  t.mock.timers.tick(5_000) // the poll finds the same ring
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(pressed.length, 1)
+  assert.equal(calls.length, 1)
+})

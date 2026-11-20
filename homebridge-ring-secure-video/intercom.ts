@@ -93,6 +93,10 @@ function createIntercomVideoProxy(device: RingIntercom): RingCamera {
     return realStartLiveCall()
   })
 
+  // A ding's call that nothing has claimed yet. A snapshot takes a frame from it (Ring has no
+  // snapshot for Intercom Video), which also hands it on to the recording.
+  define('hasPreWarmedCall', () => preWarmedCall !== null)
+
   define('preWarmCamera', () => {
     if (preWarmedCall) return
     logInfo(`${device.name}: pre-warming camera connection`)
@@ -147,6 +151,8 @@ function createIntercomVideoProxy(device: RingIntercom): RingCamera {
 
 /** How often Intercom Video asks Ring for an active ding (its ding pushes don't arrive). */
 const DING_POLL_INTERVAL_MS = 5000
+/** A ding within this time of the last one is the same ring (push and poll both report it). */
+const DING_REPEAT_MS = 30_000
 
 export class Intercom extends BaseDataAccessory<RingIntercom> {
   private unlocking = false
@@ -233,9 +239,11 @@ export class Intercom extends BaseDataAccessory<RingIntercom> {
               map(() => undefined as void),
             )
 
+        // The push and the poll both report the same ring, the poll a few seconds later (seen
+        // 6 s apart). One ring is one event for the doorbell, auto-open and the pre-warm.
         // share() makes this hot: one polling interval, one lastDingId,
         // emission fans out to all subscribers (doorbell service + auto-open)
-        return merge(device.onDing, polled).pipe(share())
+        return merge(device.onDing, polled).pipe(throttleTime(DING_REPEAT_MS), share())
       })(),
       onDoorbellPressed = onDingDetected.pipe(
         throttleTime(3000),

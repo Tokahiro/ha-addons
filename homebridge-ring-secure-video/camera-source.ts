@@ -67,7 +67,18 @@ import { normalizeMediaConfig } from './media-config.ts'
 const mediaDirectory = path.join(fileURLToPath(new URL('.', import.meta.url)), '..', 'media'),
   readFileAsync = promisify(readFile),
   cameraOfflinePath = path.join(mediaDirectory, 'camera-offline.jpg'),
-  snapshotsBlockedPath = path.join(mediaDirectory, 'snapshots-blocked.jpg')
+  snapshotsBlockedPath = path.join(mediaDirectory, 'snapshots-blocked.jpg'),
+  // Intercom Video has no Ring snapshot (404), so its image is a frame of a running call.
+  liveFrameTimeoutMs = 8_000, // call setup included
+  liveFrameReuseMs = 10_000,
+  // A ding's pre-warmed call stays up 20 s for the recording; one a frame took keeps it about as long.
+  preWarmedCallHoldMs = 15_000
+
+/** Intercom Video only: a ding's pre-warmed call, or a call that runs (recording, live view). */
+function canTakeLiveFrame(ringCamera: RingCamera, mediaIngress: RingMediaIngress) {
+  const hasPreWarmedCall = (ringCamera as any).hasPreWarmedCall as (() => boolean) | undefined
+  return Boolean(hasPreWarmedCall && (hasPreWarmedCall() || mediaIngress.hasCall))
+}
 
 function getDurationSeconds(start: number) {
   return (Date.now() - start) / 1000
@@ -805,6 +816,23 @@ export class CameraSource
 
   private async loadAndCacheSnapshot(imageUuid?: string) {
     const start = Date.now()
+
+    if (canTakeLiveFrame(this.ringCamera, this.mediaIngress)) {
+      if (Date.now() - this.cachedSnapshotAt < liveFrameReuseMs) return
+      const frame = await this.takeLiveFrame().catch((e: any) => {
+        logDebug(`No frame from the live call for ${this.ringCamera.name}: ${e?.message ?? e}`)
+        return undefined
+      })
+      if (frame) {
+        this.cachedSnapshot = frame
+        this.cachedSnapshotAt = Date.now()
+        logInfo(
+          `Snapshot taken from live call for ${this.ringCamera.name} (${getDurationSeconds(start)}s)`,
+        )
+        return
+      }
+    }
+
     logDebug(
       `Loading new snapshot into cache for ${this.ringCamera.name}${
         imageUuid ? ' by uuid' : ''
@@ -841,6 +869,41 @@ export class CameraSource
     }
   }
 
+  private async takeLiveFrame(): Promise<Buffer | undefined> {
+    const tookPreWarmedCall = !this.mediaIngress.hasCall,
+      signal = AbortSignal.timeout(liveFrameTimeoutMs),
+      lease = await this.mediaIngress.acquire('snapshot', signal),
+      chunks: Buffer[] = []
+    let transcoder: IngressTranscoder | undefined
+    try {
+      transcoder = await lease.createTranscoder({
+        signal,
+        label: `Snapshot ${this.ringCamera.name}`,
+        audio: ['-an'],
+        video: ['-frames:v', '1', '-vcodec', 'mjpeg', '-q:v', '4'],
+        output: ['-f', 'image2', 'pipe:1'],
+        stdoutCallback: (data) => chunks.push(data),
+      })
+      const exited = await Promise.race([
+        transcoder.exited.then(() => true),
+        new Promise<false>((resolve) =>
+          signal.addEventListener('abort', () => resolve(false), { once: true }),
+        ),
+      ])
+      if (!exited) return undefined
+    } finally {
+      transcoder?.stop()
+      // Releasing the pre-warmed call at once would stop it before the recording claims it.
+      if (tookPreWarmedCall) {
+        setTimeout(() => lease.release(), preWarmedCallHoldMs)
+      } else {
+        lease.release()
+      }
+    }
+    const jpeg = Buffer.concat(chunks)
+    return jpeg[0] === 0xff && jpeg[1] === 0xd8 ? jpeg : undefined
+  }
+
   private getCurrentSnapshot() {
     if (this.ringCamera.isOffline) {
       return readFileAsync(cameraOfflinePath)
@@ -856,20 +919,27 @@ export class CameraSource
       } for ${this.ringCamera.name}`,
     )
 
-    if (!this.ringCamera.hasSnapshotWithinLifetime) {
-      this.loadSnapshot().catch(logError)
-    }
-
     // May or may not have a snapshot cached. A failed load keeps the last one for a while, but
     // not past Ring's snapshot lifetime plus 2 minutes (as upstream): an hours-old image would
     // look current in the Home app.
-    if (
+    const cached = () =>
       this.cachedSnapshot &&
       Date.now() - this.cachedSnapshotAt > this.ringCamera.snapshotLifeTime + 2 * 60_000
-    ) {
-      return undefined
+        ? undefined
+        : this.cachedSnapshot
+
+    if (!this.ringCamera.hasSnapshotWithinLifetime) {
+      const loading = this.loadSnapshot().catch(logError)
+      // HomeKit asks for the doorbell notification's image right after the ding: let it wait
+      // for the frame, which takes a few seconds.
+      if (
+        canTakeLiveFrame(this.ringCamera, this.mediaIngress) &&
+        Date.now() - this.cachedSnapshotAt >= liveFrameReuseMs
+      ) {
+        return loading.then(cached)
+      }
     }
-    return this.cachedSnapshot
+    return cached()
   }
 
   async handleSnapshotRequest(
