@@ -18,6 +18,12 @@ area type from the Matter Common Area namespace, derived from the HA area.
 The log shows one line per area, for example
 `hamh_raumtyp: Küche -> areaType Kitchen (47)`.
 
+## Vacuum only
+
+Option `vacuum_only` (default on): the hub offers only Vacuum and fan-speed
+cleaning modes and never changes the vacuum's cleaning-mode select. Apple Home
+and Siri send "Vacuum & Mop" for room cleaning otherwise.
+
 ## Notes
 
 - Base image: `ghcr.io/riddix/home-assistant-matter-hub-addon:2.0.60`.

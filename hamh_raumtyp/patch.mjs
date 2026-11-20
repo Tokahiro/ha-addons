@@ -81,6 +81,23 @@ if (!src.includes("var logger260 = Logger.get(\"VacuumServiceAreaServer\")") &&
     !/logger260 = Logger\.get\("VacuumServiceAreaServer"\)/.test(src)) {
   throw new Error("logger260 is not the VacuumServiceAreaServer logger, check the bundle");
 }
+// Optional vacuum-only mode: without cleaning-mode options and mop
+// intensities the hub offers only Vacuum and fan-speed modes, and never
+// changes the cleaning-mode select. The robot keeps its own setting.
+const cleanModeSig =
+  "function createVacuumRvcCleanModeServer(_attributes, fanSpeedList, mopIntensityList, cleaningModeOptions, customFanSpeedTags) {";
+if (src.split(cleanModeSig).length !== 2) {
+  throw new Error("createVacuumRvcCleanModeServer signature not found once");
+}
+src = src.replace(
+  cleanModeSig,
+  `${cleanModeSig}
+  if (process.env.VACUUM_ONLY === "true") {
+    logger257.info("hamh_raumtyp: vacuum_only, mop modes hidden");
+    cleaningModeOptions = void 0;
+    mopIntensityList = void 0;
+  }`,
+);
 patchFunction("createCleanAreaServiceAreaServer");
 patchFunction("roomsToAreas");
 const anchor = src.indexOf("\nfunction roomsToAreas(");
