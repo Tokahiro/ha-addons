@@ -88,7 +88,8 @@ jobs:
           # Only until trusted publishing is set up on npmjs.com (see FORK.md).
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          file=$(ls dist/*.tgz)
+          # "./": npm reads "dist/x.tgz" as a GitHub repository.
+          file=$(ls ./dist/*.tgz)
           name=$(tar -xOzf "$file" package/package.json | jq -r .name)
           version=$(tar -xOzf "$file" package/package.json | jq -r .version)
           if npm view "$name@$version" version > /dev/null 2>&1; then
