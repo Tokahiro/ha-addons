@@ -141,7 +141,8 @@ export abstract class BaseAccessory<T extends { name: string }> {
       hap.Service.DataStreamTransportManagement?.UUID,
     ].filter(Boolean)
 
-    this.accessory.services.forEach((service) => {
+    // A copy: removeService() splices accessory.services, which would skip the next service.
+    ;[...this.accessory.services].forEach((service) => {
       if (
         !this.servicesInUse.includes(service) &&
         !safeServiceUUIDs.includes(service.UUID)

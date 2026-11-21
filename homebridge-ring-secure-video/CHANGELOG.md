@@ -1,5 +1,10 @@
 # homebridge-ring-secure-video
 
+## 1.1.1 (2026-11-21)
+
+- Unused services of a cached accessory are all removed at one start. Before, of two unused
+  services in a row only the first went, the second at the next start.
+
 ## 1.1.0 (2026-11-21)
 
 First release on npm as `@tokahiro/homebridge-ring-secure-video`: 1.0.4+fix.1 and the changes
