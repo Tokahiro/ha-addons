@@ -225,7 +225,7 @@
       "hideIntercomAutoOpenSwitch": {
         "title": "Hide Intercom Auto Open Switch",
         "type": "boolean",
-        "description": "Hides the \"<intercom> Auto Open\" switch of Ring Intercoms. When that switch is on, every ring opens the door. Hidden, a ring never opens the door by itself; the lock still opens it."
+        "description": "Hides the \"Auto Open\" switch of Ring Intercoms. When that switch is on, every ring opens the door. Hidden, a ring never opens the door by itself; the lock still opens it."
       },
       "hideAlarmSirenSwitch": {
         "title": "Hide Alarm Siren Switch",

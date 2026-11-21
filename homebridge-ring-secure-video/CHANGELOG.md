@@ -1,6 +1,10 @@
 # homebridge-ring-secure-video
 
-## 1.0.4+fix.2 (2026-11-21)
+## 1.1.0 (2026-11-21)
+
+First release on npm as `@tokahiro/homebridge-ring-secure-video`: 1.0.4+fix.1 and the changes
+below. The platform name stays "Ring Secure Video", so a switch from `homebridge-ring-secure-video`
+keeps the settings, the cached accessories and the Home pairing (see `FORK.md`).
 
 - Ring Intercom: new option `hideIntercomAutoOpenSwitch` (Accessory Visibility, "Hide Intercom
   Auto Open Switch"). It hides the "Auto Open" switch, so a ring never opens the door by itself.
