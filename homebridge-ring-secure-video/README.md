@@ -64,6 +64,7 @@ trinityhades.**
 | `disableHksvOnBattery` | Disables HKSV on cameras running on battery to reduce battery/network usage; wired battery models keep it. On by default |
 | `homeKitAccessoryTag` | Appends a tag to accessory names and HomeKit IDs so the same Ring device can be exposed as a distinct HomeKit accessory for debugging/testing |
 | `hideDoorbellSwitch` / `hideCameraMotionSensor` / `hideCameraSirenSwitch` | Hides specific HomeKit-exposed services |
+| `hideIntercomAutoOpenSwitch` | Hides the "Auto Open" switch of Ring Intercoms (on, it opens the door on every ring). Hidden, a ring never opens the door by itself, and a switch from an earlier start is removed from HomeKit |
 | `cameraMotionNotificationSensor` | Adds a separate "<camera> Motion" sensor per camera for instant motion notifications (see below) |
 | `doorbellPressMotion` | For Ring doorbells with HKSV recording on: a press also turns on the camera's motion for 30 seconds, so HKSV records the visitor even when Ring reported no motion (during a live view, or a quick press-and-leave). One recording per visit, not two. Notifications and automations on the camera's motion sensor also see it; the separate notification sensor does not. No effect with `hideCameraMotionSensor`. Off by default |
 | `showPanicButtons` | Adds panic switches (use with caution) |

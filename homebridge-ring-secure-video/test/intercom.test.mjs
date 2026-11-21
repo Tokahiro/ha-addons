@@ -204,3 +204,23 @@ test('a ring that comes by push and by poll is one doorbell event and one pre-wa
   assert.equal(pressed.length, 1)
   assert.equal(calls.length, 1)
 })
+
+test('the auto-open switch is there by default, and hidden it is removed from the cache', (t) => {
+  mockTimers(t)
+  const autoOpen = (accessory) =>
+    accessory.getServiceById(hapNodejs.Service.Switch, 'AutoOpen')
+
+  const shown = setUp(t, 'intercom_handset_video')
+  shown.intercom.initBase()
+  assert.ok(autoOpen(shown.intercom.accessory))
+
+  const requests = [],
+    device = fakeIntercom('intercom_handset_video', requests),
+    accessory = new PlatformAccessory(device.name, hapNodejs.uuid.generate('hidden'))
+  accessory.addService(hapNodejs.Service.Switch, 'Front Gate Auto Open', 'AutoOpen') // cached
+  const intercom = new Intercom(device, accessory, { hideIntercomAutoOpenSwitch: true })
+  intercom.initBase()
+  assert.equal(autoOpen(accessory), undefined)
+  assert.ok(accessory.getService(hapNodejs.Service.LockMechanism))
+  assert.ok(accessory.getService(hapNodejs.Service.Doorbell))
+})

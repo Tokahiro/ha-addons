@@ -1,15 +1,15 @@
 # homebridge-ring-secure-video (patched)
 
 Source of [homebridge-ring-secure-video](https://github.com/zmanuel1234/homebridge-ring-secure-video)
-1.0.4 by zmanuel1234 (MIT), with two fixes for Ring Intercom Video. See `CHANGELOG.md`, version
-`1.0.4+fix.1`. This folder is a Homebridge plugin, not a Home Assistant add-on.
+1.0.4 by zmanuel1234 (MIT), with two fixes and one option for Ring Intercom Video. See `CHANGELOG.md`, version
+`1.0.4+fix.2`. This folder is a Homebridge plugin, not a Home Assistant add-on.
 
 ## Install
 
 In the Homebridge terminal (Homebridge UI, menu, Terminal):
 
 ```sh
-npm install --prefix /var/lib/homebridge https://github.com/Tokahiro/ha-addons/releases/download/homebridge-ring-secure-video-1.0.4-fix.1/homebridge-ring-secure-video-1.0.4-fix.1.tgz
+npm install --prefix /var/lib/homebridge https://github.com/Tokahiro/ha-addons/releases/download/homebridge-ring-secure-video-1.0.4-fix.2/homebridge-ring-secure-video-1.0.4-fix.2.tgz
 ```
 
 Then restart Homebridge. The plugin keeps its name, so the settings and the Home pairing stay.

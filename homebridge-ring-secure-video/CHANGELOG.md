@@ -1,5 +1,11 @@
 # homebridge-ring-secure-video
 
+## 1.0.4+fix.2 (2026-11-21)
+
+- Ring Intercom: new option `hideIntercomAutoOpenSwitch` (Accessory Visibility, "Hide Intercom
+  Auto Open Switch"). It hides the "Auto Open" switch, so a ring never opens the door by itself.
+  A switch from an earlier start is removed from HomeKit. Off by default.
+
 ## 1.0.4+fix.1 (2026-11-20)
 
 Changes on top of 1.0.4 in Tokahiro/ha-addons. Homebridge shows it as 1.0.4.
