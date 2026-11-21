@@ -104,7 +104,10 @@ const ignoreHiddenDeviceTypes: string[] = [
 ]
 
 export const platformName = 'Ring Secure Video'
-export const pluginName = 'homebridge-ring-secure-video'
+/** The npm package name, as Homebridge knows the plugin (a fork can be published under its own). */
+export const pluginName: string = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+).name
 
 function getAccessoryClass(
   device: RingDevice,

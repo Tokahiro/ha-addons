@@ -323,31 +323,34 @@ export class Intercom extends BaseDataAccessory<RingIntercom> {
       lockService.setPrimaryService(true)
     }
 
-    // Auto-Open Switch — when on, automatically unlocks the door on every ring
-    this.registerCharacteristic({
-      characteristicType: Characteristic.On,
-      serviceType: Service.Switch,
-      serviceSubType: 'AutoOpen',
-      name: device.name + ' Auto Open',
-      getValue: () => this.autoOpen,
-      setValue: (value: boolean) => {
-        this.autoOpen = value
-        logInfo(`${device.name} auto-open ${value ? 'enabled' : 'disabled'}`)
-      },
-    })
+    // Auto-Open Switch — when on, automatically unlocks the door on every ring.
+    // Hidden: no switch, and a switch from an earlier start is pruned from the cache.
+    if (!config.hideIntercomAutoOpenSwitch) {
+      this.registerCharacteristic({
+        characteristicType: Characteristic.On,
+        serviceType: Service.Switch,
+        serviceSubType: 'AutoOpen',
+        name: device.name + ' Auto Open',
+        getValue: () => this.autoOpen,
+        setValue: (value: boolean) => {
+          this.autoOpen = value
+          logInfo(`${device.name} auto-open ${value ? 'enabled' : 'disabled'}`)
+        },
+      })
 
-    onDingDetected.pipe(throttleTime(15000)).subscribe(() => {
-      if (this.autoOpen) {
-        logInfo(`Auto-opening ${device.name}`)
-        device
-          .unlock()
-          .then((response) =>
-            logInfo(`Auto-open unlock response: ${JSON.stringify(response)}`),
-          )
-          .catch(logError)
-        markAsUnlocked()
-      }
-    })
+      onDingDetected.pipe(throttleTime(15000)).subscribe(() => {
+        if (this.autoOpen) {
+          logInfo(`Auto-opening ${device.name}`)
+          device
+            .unlock()
+            .then((response) =>
+              logInfo(`Auto-open unlock response: ${JSON.stringify(response)}`),
+            )
+            .catch(logError)
+          markAsUnlocked()
+        }
+      })
+    }
 
     // Pre-warm the camera WebRTC connection on every ding so HKSV recording
     // gets live video instead of black frames.

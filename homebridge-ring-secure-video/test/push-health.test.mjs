@@ -400,7 +400,7 @@ test("only this bridge's own block gives the saved token", (t) => {
   assert.equal(saved([block('', 'AA')], child), undefined, 'signed out')
   assert.equal(saved([block('a', 'aa')], child), 'a', 'username in lower case')
   assert.equal(
-    saved([{ ...block('p', 'AA'), platform: 'homebridge-ring-secure-video.Ring Secure Video' }], child),
+    saved([{ ...block('p', 'AA'), platform: '@tokahiro/homebridge-ring-secure-video.Ring Secure Video' }], child),
     'p',
     'platform named with the plugin',
   )
