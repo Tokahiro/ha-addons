@@ -1,3 +1,10 @@
+> **Note: this is a private fork for personal tests and experiments.** It is not maintained for
+> general use and can change or go away at any time. Please use the original plugin,
+> [homebridge-ring-secure-video](https://github.com/zmanuel1234/homebridge-ring-secure-video)
+> by zmanuel1234 ([npm](https://www.npmjs.com/package/homebridge-ring-secure-video)). Do not
+> report problems with this fork to the original author. The changes of this fork are in
+> [CHANGELOG.md](CHANGELOG.md).
+
 <p align="center">
   <img alt="Ring Secure Video" src="https://raw.githubusercontent.com/zmanuel1234/homebridge-ring-secure-video/main/branding/homebridge-ring-secure-video.svg" width="150">
 </p>

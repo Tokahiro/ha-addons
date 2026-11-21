@@ -1,5 +1,9 @@
 # homebridge-ring-secure-video
 
+## 1.1.2 (2026-11-21)
+
+- README: note at the top that this is a private fork for tests, and a link to the original.
+
 ## 1.1.1 (2026-11-21)
 
 - Unused services of a cached accessory are all removed at one start. Before, of two unused
