@@ -218,9 +218,11 @@ test('the auto-open switch is there by default, and hidden it is removed from th
     device = fakeIntercom('intercom_handset_video', requests),
     accessory = new PlatformAccessory(device.name, hapNodejs.uuid.generate('hidden'))
   accessory.addService(hapNodejs.Service.Switch, 'Front Gate Auto Open', 'AutoOpen') // cached
+  accessory.addService(hapNodejs.Service.Switch, 'Old switch', 'Old') // a second unused one, next to it
   const intercom = new Intercom(device, accessory, { hideIntercomAutoOpenSwitch: true })
   intercom.initBase()
   assert.equal(autoOpen(accessory), undefined)
+  assert.equal(accessory.getServiceById(hapNodejs.Service.Switch, 'Old'), undefined)
   assert.ok(accessory.getService(hapNodejs.Service.LockMechanism))
   assert.ok(accessory.getService(hapNodejs.Service.Doorbell))
 })
