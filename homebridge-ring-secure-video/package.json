@@ -2,7 +2,7 @@
   "name": "@tokahiro/homebridge-ring-secure-video",
   "displayName": "Ring Secure Video",
   "version": "1.1.2",
-  "description": "Homebridge plugin for Ring devices with HomeKit Secure Video recording, based on homebridge-ring and homebridge-ring-hksv",
+  "description": "Private test fork of homebridge-ring-secure-video, please use the original. Homebridge plugin for Ring devices with HomeKit Secure Video recording, based on homebridge-ring and homebridge-ring-hksv",
   "type": "module",
   "main": "./lib/index.js",
   "exports": "./lib/index.js",
