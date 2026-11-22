@@ -4,7 +4,7 @@ import { Subject, Subscription } from 'rxjs'
 import * as hapNodejs from '@homebridge/hap-nodejs'
 import { useLogger } from 'ring-client-api/util'
 import { setHap } from '../lib/hap.js'
-import { CameraSource } from '../lib/camera-source.js'
+import { CameraSource, claimReturnAudio, releaseReturnAudio } from '../lib/camera-source.js'
 
 setHap(hapNodejs)
 useLogger({ logInfo() {}, logError() {} })
@@ -113,4 +113,41 @@ test('a live view HomeKit stops while starting it is answered OK, so HomeKit clo
   assert.equal(error, undefined)
   assert.deepEqual(forceStopped, [])
   assert.deepEqual(source.sessions, {})
+})
+
+test('two live views of one call: a stop from HomeKit for one leaves the other', async () => {
+  const { source, released, forceStopped } = await prepare('s1')
+  const key = Buffer.alloc(16),
+    salt = Buffer.alloc(14)
+  await new Promise((resolve) =>
+    source.prepareStream(
+      {
+        sessionID: 's2',
+        targetAddress: '127.0.0.1',
+        sourceAddress: '127.0.0.1',
+        addressVersion: 'ipv4',
+        audio: { port: 9, srtp_key: key, srtp_salt: salt },
+        video: { port: 9, srtp_key: key, srtp_salt: salt },
+      },
+      resolve,
+    ),
+  )
+  await new Promise((resolve) => source.handleStreamRequest({ sessionID: 's1', type: 'stop' }, resolve))
+  assert.deepEqual(Object.keys(source.sessions), ['s2'])
+  assert.equal(released(), 1)
+  assert.deepEqual(forceStopped, [])
+})
+
+test('only one live view of a call sends return audio, until it stops', () => {
+  const call = {},
+    first = {},
+    second = {}
+  assert.equal(claimReturnAudio(call, first), true)
+  assert.equal(claimReturnAudio(call, second), false)
+  assert.equal(claimReturnAudio(call, first), true)
+  releaseReturnAudio(call, second)
+  assert.equal(claimReturnAudio(call, second), false)
+  releaseReturnAudio(call, first)
+  assert.equal(claimReturnAudio(call, second), true)
+  assert.equal(claimReturnAudio({}, first), true)
 })

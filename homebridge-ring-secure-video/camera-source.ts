@@ -137,6 +137,26 @@ export function getReturnAudioPrepareStreamRequest(
   }
 }
 
+// Two live views can share one Ring call, but the call has one return audio track: packets of
+// two viewers' return audio ffmpegs (each with its own sequence numbers and timestamps) would mix
+// into one broken stream. The first viewer that sends return audio keeps the track until it stops.
+const returnAudioOwners = new WeakMap<object, object>()
+
+export function claimReturnAudio(call: object, viewer: object) {
+  const owner = returnAudioOwners.get(call)
+  if (owner === undefined) {
+    returnAudioOwners.set(call, viewer)
+    return true
+  }
+  return owner === viewer
+}
+
+export function releaseReturnAudio(call: object, viewer: object) {
+  if (returnAudioOwners.get(call) === viewer) {
+    returnAudioOwners.delete(call)
+  }
+}
+
 class StreamingSessionWrapper {
   audioSsrc = hap.CameraController.generateSynchronisationSource()
   videoSsrc = hap.CameraController.generateSynchronisationSource()
@@ -366,6 +386,10 @@ class StreamingSessionWrapper {
     let cameraSpeakerActive = false
     // used to send return audio from HomeKit to Ring
     const returnAudioTranscodedSplitter = new RtpSplitter(({ message }) => {
+        if (!claimReturnAudio(this.streamingSession, this)) {
+          // another live view of this call talks to Ring
+          return null
+        }
         if (!cameraSpeakerActive) {
           cameraSpeakerActive = true
           this.streamingSession.activateCameraSpeaker()
@@ -486,6 +510,7 @@ class StreamingSessionWrapper {
     this.audioSplitter.close()
     this.transcodedAudioSplitter.close()
     this.videoSplitter.close()
+    releaseReturnAudio(this.streamingSession, this)
     this.sourceSession.release()
     this.onStopped?.()
   }
@@ -605,7 +630,10 @@ export class CameraSource
     const enableHksv = isHksvEnabled(config, ringCamera.operatingOnBattery)
 
     const controllerOptions: any = {
-      cameraStreamCount: enableHksv ? 1 : 10,
+      // With HKSV on, two live views at a time: on a doorbell press one device (for example an
+      // Apple TV) can open one by itself, and a phone opened next got "camera in use". Both
+      // share the one Ring call (RingMediaIngress).
+      cameraStreamCount: enableHksv ? 2 : 10,
       delegate: this,
       streamingOptions: {
         supportedCryptoSuites: [SRTPCryptoSuites.AES_CM_128_HMAC_SHA1_80],
@@ -984,7 +1012,7 @@ export class CameraSource
       // A session that stops by itself (HomeKit stopped sending, or Ring ended the call) leaves
       // the list too, and HomeKit is told it ended: it doesn't always send its stop request
       // then, and until it does, the camera counts as busy for other viewers (with HKSV on, a
-      // camera allows one live view). Stops HomeKit asked for take it out of the list first.
+      // camera allows two live views). Stops HomeKit asked for take it out of the list first.
       // During a start request, the error answer tells HomeKit instead (telling it twice could
       // close another viewer's newly set up session).
       session.onStopped = () => {
