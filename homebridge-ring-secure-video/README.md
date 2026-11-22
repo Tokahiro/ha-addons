@@ -208,7 +208,8 @@ fork).
 
 ### Recording codecs
 
-Only HKSV recordings are encoded; live view passes Ring's video through. `media.recording.codec`
+Only HKSV recordings are encoded; live view passes Ring's video through. With HKSV on, two
+devices can open a live view of a camera at a time (without HKSV, ten). `media.recording.codec`
 chooses how:
 
 | Codec | What it does | CPU |

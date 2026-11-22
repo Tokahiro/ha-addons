@@ -1,5 +1,12 @@
 # homebridge-ring-secure-video
 
+## 1.1.3 (2026-11-22)
+
+- With HKSV on, a camera allows two live views at a time instead of one. On a doorbell press a
+  live view started 3 s after the press on one device, and the Home app on a phone then showed
+  "camera in use" (log: "Preparing Live Stream" right after "Doorbell pressed"). Both live views
+  share the one Ring call; video passes through, so a second view adds its audio transcoding.
+
 ## 1.1.2 (2026-11-21)
 
 - README: note at the top that this is a private fork for tests, and a link to the original.

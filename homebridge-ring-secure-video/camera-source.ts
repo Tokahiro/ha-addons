@@ -605,7 +605,10 @@ export class CameraSource
     const enableHksv = isHksvEnabled(config, ringCamera.operatingOnBattery)
 
     const controllerOptions: any = {
-      cameraStreamCount: enableHksv ? 1 : 10,
+      // With HKSV on, two live views at a time: on a doorbell press one device (for example an
+      // Apple TV) can open one by itself, and a phone opened next got "camera in use". Both
+      // share the one Ring call (RingMediaIngress).
+      cameraStreamCount: enableHksv ? 2 : 10,
       delegate: this,
       streamingOptions: {
         supportedCryptoSuites: [SRTPCryptoSuites.AES_CM_128_HMAC_SHA1_80],
@@ -984,7 +987,7 @@ export class CameraSource
       // A session that stops by itself (HomeKit stopped sending, or Ring ended the call) leaves
       // the list too, and HomeKit is told it ended: it doesn't always send its stop request
       // then, and until it does, the camera counts as busy for other viewers (with HKSV on, a
-      // camera allows one live view). Stops HomeKit asked for take it out of the list first.
+      // camera allows two live views). Stops HomeKit asked for take it out of the list first.
       // During a start request, the error answer tells HomeKit instead (telling it twice could
       // close another viewer's newly set up session).
       session.onStopped = () => {
