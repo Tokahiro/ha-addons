@@ -137,6 +137,26 @@ export function getReturnAudioPrepareStreamRequest(
   }
 }
 
+// Two live views can share one Ring call, but the call has one return audio track: packets of
+// two viewers' return audio ffmpegs (each with its own sequence numbers and timestamps) would mix
+// into one broken stream. The first viewer that sends return audio keeps the track until it stops.
+const returnAudioOwners = new WeakMap<object, object>()
+
+export function claimReturnAudio(call: object, viewer: object) {
+  const owner = returnAudioOwners.get(call)
+  if (owner === undefined) {
+    returnAudioOwners.set(call, viewer)
+    return true
+  }
+  return owner === viewer
+}
+
+export function releaseReturnAudio(call: object, viewer: object) {
+  if (returnAudioOwners.get(call) === viewer) {
+    returnAudioOwners.delete(call)
+  }
+}
+
 class StreamingSessionWrapper {
   audioSsrc = hap.CameraController.generateSynchronisationSource()
   videoSsrc = hap.CameraController.generateSynchronisationSource()
@@ -366,6 +386,10 @@ class StreamingSessionWrapper {
     let cameraSpeakerActive = false
     // used to send return audio from HomeKit to Ring
     const returnAudioTranscodedSplitter = new RtpSplitter(({ message }) => {
+        if (!claimReturnAudio(this.streamingSession, this)) {
+          // another live view of this call talks to Ring
+          return null
+        }
         if (!cameraSpeakerActive) {
           cameraSpeakerActive = true
           this.streamingSession.activateCameraSpeaker()
@@ -486,6 +510,7 @@ class StreamingSessionWrapper {
     this.audioSplitter.close()
     this.transcodedAudioSplitter.close()
     this.videoSplitter.close()
+    releaseReturnAudio(this.streamingSession, this)
     this.sourceSession.release()
     this.onStopped?.()
   }
