@@ -1,0 +1,13 @@
+{
+  "homebridge-ring-secure-video": {
+    "repo": "zmanuel1234/homebridge-ring-secure-video",
+    "base": "v1.0.4"
+  },
+  "hamh_raumtyp": {
+    "repo": "RiDDiX/home-assistant-matter-hub"
+  },
+  "eufy-clean": {
+    "repo": "jeppesens/eufy-clean",
+    "installed": "2706d1a"
+  }
+}
