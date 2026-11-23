@@ -28,11 +28,11 @@ echo "Upstream ${latest} is newer than ${current}."
 
 branch="smith/upstream-hamh-${latest}"
 title="Matter Hub (area type): update to ${latest}"
-if git ls-remote --exit-code --heads origin "${branch}" > /dev/null; then
-  echo "Branch ${branch} exists. Nothing to do."
+if [[ "$(gh pr list --state open --json headRefName --jq '[.[] | select(.headRefName | startswith("smith/upstream-hamh-"))] | length')" != "0" ]]; then
+  echo "An upstream pull request for hamh_raumtyp is open. Merge or close it first."
   exit 0
 fi
-if [[ "$(gh issue list --state open --search "\"${title}\" in:title" --json number --jq length)" != "0" ]]; then
+if [[ "$(gh issue list --state open --search "\"${title}\" in:title" --json title --jq "[.[] | select(.title == \"${title}\")] | length")" != "0" ]]; then
   echo "An open issue for ${latest} exists. Nothing to do."
   exit 0
 fi
@@ -65,7 +65,8 @@ fi
 
 git add "${dir}"
 git commit -q -m "hamh_raumtyp: update to Matter Hub ${latest}"
-git push -q origin "${branch}"
+# --force: a branch left over from a run that failed before the pull request is replaced.
+git push -q --force origin "${branch}"
 body=$(cat <<EOF
 Moves the area type test add-on from Home-Assistant-Matter-Hub ${current} to ${latest}.
 The image builds and \`patch.mjs\` applies (checked in the upstream check run, amd64).

@@ -8,23 +8,27 @@ on:
     - cron: "0 5 * * 1"
   workflow_dispatch:
 
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+permissions: {}
 
 concurrency:
   group: upstream-check
   cancel-in-progress: false
 
 jobs:
-  ring:
+  # Upstream code (npm install scripts, lint config, tests) runs only in this job, which has no
+  # token that can write. The next job opens the pull request from a fresh checkout.
+  ring-merge:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      status: ${{ steps.merge.outputs.status }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -33,13 +37,61 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Merge a new upstream release
+        id: merge
+        run: |
+          bash .github/scripts/upstream_ring.sh merge "${RUNNER_TEMP}/ring-merge"
+          echo "status=$(jq -r .status "${RUNNER_TEMP}/ring-merge/meta.json")" >> "${GITHUB_OUTPUT}"
+      # Uploaded before the tests run, so that upstream code cannot change it.
+      - uses: actions/upload-artifact@v4
+        if: steps.merge.outputs.status != 'none'
+        with:
+          name: ring-merge
+          path: ${{ runner.temp }}/ring-merge
+      - name: Lint and tests
+        if: steps.merge.outputs.status == 'pr'
+        run: bash .github/scripts/upstream_ring.sh check "${RUNNER_TEMP}/ring-check"
+      - uses: actions/upload-artifact@v4
+        if: steps.merge.outputs.status == 'pr'
+        with:
+          name: ring-check
+          path: ${{ runner.temp }}/ring-check
+
+  ring-open:
+    needs: ring-merge
+    if: needs.ring-merge.outputs.status == 'pr' || needs.ring-merge.outputs.status == 'conflict'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ring-merge
+          path: ${{ runner.temp }}/ring-merge
+      - uses: actions/download-artifact@v4
+        if: needs.ring-merge.outputs.status == 'pr'
+        with:
+          name: ring-check
+          path: ${{ runner.temp }}/ring-check
+      - name: Open the pull request or issue
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/upstream_ring.sh
+        run: bash .github/scripts/upstream_ring.sh open "${RUNNER_TEMP}/ring-merge" "${RUNNER_TEMP}/ring-check"
 
   hamh:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - name: Git identity
@@ -54,6 +106,9 @@ jobs:
   eufy:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
       - name: Look for a release with the installed commit
