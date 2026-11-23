@@ -1,0 +1,62 @@
+name: Upstream check
+
+# Checks the upstreams of the forks once a week (see .github/upstream.json). Opens a pull
+# request for a clean update, or an issue when it needs a hand. Nothing is merged or published
+# here: a merge to main publishes as usual.
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-check
+  cancel-in-progress: false
+
+jobs:
+  ring:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Merge a new upstream release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/upstream_ring.sh
+
+  hamh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Update to a new upstream release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/upstream_hamh.sh
+
+  eufy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Look for a release with the installed commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/upstream_eufy.sh
